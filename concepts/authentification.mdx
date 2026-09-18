@@ -1,0 +1,92 @@
+---
+title: "Authentification"
+description: "Clé API pour l'intégration serveur, jeton marchand pour les opérations du dashboard."
+icon: "key"
+---
+
+L'API Djonanko Pay utilise **deux mécanismes** d'authentification, selon la nature de l'opération.
+
+## Clé API — intégration serveur à serveur
+
+Utilisée pour **créer des liens de paiement et des QR codes**. Deux en-têtes sont requis :
+
+| En-tête | Valeur |
+|---|---|
+| `x-api-key` | Votre clé publique, préfixée `DJN-` |
+| `x-api-secret` | Votre secret, 64 caractères hexadécimaux |
+
+```bash
+curl https://apidjonanko.tech/web-merchant/create-web-payment-link \
+  -H "x-api-key: DJN-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" \
+  -H "x-api-secret: <votre_secret>" \
+  ...
+```
+
+<Warning>
+**Le secret ne doit jamais quitter vos serveurs.** Ne l'embarquez pas dans une application mobile, une page web ou un dépôt Git. Si vous suspectez une fuite, [régénérez-le](/guides/rotation-des-cles) immédiatement.
+</Warning>
+
+Le secret est haché en base (bcrypt) : Djonanko ne peut pas vous le renvoyer. Il vous est communiqué **une seule fois** par SMS, à la création du compte ou à chaque régénération.
+
+Endpoints concernés :
+
+- [`POST /web-merchant/create-web-payment-link`](/api-reference/paiements/create-web-payment-link)
+
+## Jeton marchand — opérations du dashboard
+
+Tout le reste (statut d'un paiement, liste des transactions, solde, reversements, rapports, configuration) utilise un **JWT** obtenu avec les identifiants du dashboard :
+
+<Steps>
+  <Step title="Obtenez un jeton">
+    ```bash
+    curl -X POST https://apidjonanko.tech/user/login-merchant \
+      -H "Content-Type: application/json" \
+      -d '{ "numero": "0700000000", "password": "<mot_de_passe>" }'
+    ```
+
+    ```json
+    {
+      "access_token": "<jwt>",
+      "refresh_token": "…",
+      "user": { "merchant_id": "…", "userType": "MERCHANT", "…": "…" }
+    }
+    ```
+  </Step>
+  <Step title="Passez-le dans l'en-tête authenticationtoken">
+    ```bash
+    curl "https://apidjonanko.tech/web-merchant/payment/status?payment_reference=PAYR9PVUYEWVF" \
+      -H "authenticationtoken: <jwt>"
+    ```
+
+    <Note>
+    Le jeton se passe **tel quel**, sans préfixe `Bearer`.
+    </Note>
+  </Step>
+</Steps>
+
+Endpoints concernés : voir la [référence API](/api-reference/introduction) — chaque page indique l'en-tête attendu.
+
+## Quel mécanisme pour quel usage ?
+
+| Vous voulez… | Authentification |
+|---|---|
+| Créer un lien de paiement ou un QR code | Clé API |
+| Vérifier le statut d'un paiement | Jeton marchand |
+| Lister, rechercher, exporter les paiements | Jeton marchand |
+| Consulter votre solde et vos statistiques | Jeton marchand |
+| Modifier l'URL de webhook, rejouer un webhook | Jeton marchand |
+| Gérer les reversements et comptes de reversement | Jeton marchand |
+| Gérer les IPs autorisées | Jeton marchand |
+| Régénérer le secret API | Jeton marchand |
+
+<Tip>
+Pour un backend qui doit **confirmer les paiements côté serveur** (recommandé), gardez un jeton marchand en cache et renouvelez-le à réception d'un `401`. Le playground de cette documentation vous permet de tester chaque endpoint avec vos propres identifiants.
+</Tip>
+
+## La référence marchand
+
+La plupart des endpoints attendent un paramètre `merchant_reference` (ou `reference`) : c'est l'identifiant court choisi à l'inscription (ex. `beautyshop`). Vous le retrouvez dans l'onglet **Développeur** du dashboard.
+
+## Restriction par adresse IP
+
+À partir du **25 septembre 2026**, seules les adresses IP déclarées dans votre dashboard pourront appeler l'API. Voir le [guide de whitelisting IP](/guides/ip-whitelisting).

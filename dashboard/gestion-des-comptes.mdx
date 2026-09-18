@@ -1,0 +1,38 @@
+---
+title: "Gestion des comptes"
+description: "Enregistrer vos comptes mobile money et bancaires de reversement."
+icon: "landmark"
+---
+
+L'onglet **Gestion des comptes** regroupe vos **contacts de reversement** : les comptes vers lesquels Djonanko peut vous transférer vos fonds.
+
+## Moyen principal de reversement
+
+Le compte marqué **Principal** est celui utilisé par défaut pour toutes les demandes de reversement. Vous pouvez en changer à tout moment avec **Définir comme principal**.
+
+## Ajouter un contact
+
+<Tabs>
+  <Tab title="Mobile money">
+    Choisissez l'opérateur (**Orange Money, Moov Money, MTN MoMo, Wave**), le pays et saisissez le numéro. Vérifiez qu'il est bien enregistré au nom de votre entreprise ou de son représentant.
+  </Tab>
+  <Tab title="Compte bancaire">
+    Renseignez le **nom du bénéficiaire**, la **banque** (liste déroulante), le **code agence**, le **numéro de compte**, la **clé RIB** et le **code SWIFT / BIC** (8 ou 11 caractères).
+
+    Ces informations correspondent à un RIB standard. Le code SWIFT est requis pour l'exécution du virement.
+  </Tab>
+</Tabs>
+
+Cochez **Définir comme moyen principal** si ce compte doit recevoir vos reversements par défaut.
+
+## Supprimer un contact
+
+Cliquez sur l'icône de suppression puis confirmez. Les reversements déjà demandés vers ce compte ne sont pas affectés : leurs coordonnées sont figées au moment de la demande.
+
+## Par API
+
+- [`GET /web-merchant/payout-accounts`](/api-reference/reversements/list-payout-accounts)
+- [`POST /web-merchant/payout-accounts`](/api-reference/reversements/create-payout-account)
+- [`PATCH /web-merchant/payout-accounts/{id}/set-primary`](/api-reference/reversements/set-primary-payout-account)
+- [`DELETE /web-merchant/payout-accounts/{id}`](/api-reference/reversements/delete-payout-account)
+- [`GET /banks/active`](/api-reference/reversements/list-banks) — liste des banques

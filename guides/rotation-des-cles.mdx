@@ -1,0 +1,64 @@
+---
+title: "Rotation des clés API"
+description: "Régénérer votre secret API en cas de perte ou de compromission, sans interruption de service."
+icon: "arrows-rotate"
+---
+
+Votre accès API repose sur une paire **clé publique** (`x-api-key`, préfixe `DJN-`) et **secret** (`x-api-secret`). Seul le secret est régénérable ; la clé publique reste identique pendant toute la vie du compte.
+
+## Quand régénérer
+
+- Le secret a été **perdu** (il n'est communiqué qu'une fois, Djonanko ne peut pas le renvoyer).
+- Le secret a été **exposé** : commit dans un dépôt, log, capture d'écran, départ d'un collaborateur.
+- Par **hygiène**, à intervalle régulier.
+
+## Régénérer
+
+<Tabs>
+  <Tab title="Dashboard">
+    Onglet **Développeur → Nouvelle clé API**, puis **Générer**. Le nouveau secret s'affiche une seule fois et vous est aussi envoyé par SMS.
+  </Tab>
+  <Tab title="API">
+    ```bash
+    curl -X POST "https://apidjonanko.tech/web-merchant/regenerate-api-key?merchant_reference=beautyshop" \
+      -H "authenticationtoken: $DJONANKO_TOKEN"
+    ```
+
+    ```json
+    {
+      "apiKey": "DJN-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "apiSecret": "<nouveau_secret>"
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+**L'ancien secret est invalidé immédiatement.** Il n'y a pas de période de recouvrement : toute requête envoyée avec l'ancien secret après la régénération renvoie `401 Invalid API credentials`.
+</Warning>
+
+## Procédure sans interruption
+
+Parce que l'invalidation est immédiate, préparez le déploiement avant de régénérer :
+
+<Steps>
+  <Step title="Préparez le déploiement">
+    Assurez-vous de pouvoir mettre à jour la variable d'environnement `DJONANKO_API_SECRET` de tous vos services en quelques secondes (gestionnaire de secrets, redémarrage rapide).
+  </Step>
+  <Step title="Choisissez une fenêtre creuse">
+    Entre la régénération et le déploiement, les créations de lien échoueront. Faites-le à une heure de faible trafic.
+  </Step>
+  <Step title="Régénérez">
+    Depuis le dashboard ou l'API. Copiez le nouveau secret immédiatement.
+  </Step>
+  <Step title="Déployez et vérifiez">
+    Mettez à jour le secret, redémarrez, puis créez un lien de test pour confirmer que l'API répond `201`.
+  </Step>
+</Steps>
+
+## Bonnes pratiques de stockage
+
+- Stockez le secret dans un **gestionnaire de secrets** (AWS Secrets Manager, Vault, Doppler, variables chiffrées de votre plateforme), jamais dans le code.
+- Ne l'exposez **jamais côté client** : ni dans une application mobile, ni dans du JavaScript navigateur.
+- Ajoutez `.env` à votre `.gitignore` et activez la détection de secrets sur vos dépôts.
+- Combinez avec le [whitelisting IP](/guides/ip-whitelisting) : un secret volé ne fonctionne pas depuis une IP non déclarée.

@@ -1,0 +1,1919 @@
+openapi: 3.1.0
+info:
+  title: Djonanko Pay API
+  version: "1.0.0"
+  description: |
+    API de la passerelle de paiement mobile money **Djonanko Pay**.
+
+    Deux modes d'authentification coexistent :
+
+    - **Clé API** (`x-api-key` + `x-api-secret`) — pour l'intégration serveur à serveur :
+      création de liens de paiement et de QR codes.
+    - **Jeton marchand** (`authenticationtoken`) — un JWT obtenu via `POST /user/login-merchant`,
+      utilisé par le dashboard marchand pour tout le reste (statut, solde, reversements, rapports…).
+
+    Toutes les réponses sont en JSON. Les montants sont exprimés en **FCFA (XOF / XAF)** sans décimales.
+  contact:
+    name: Support Djonanko
+    url: https://www.djonanko.ci/#contact
+
+servers:
+  - url: https://apidjonanko.tech
+    description: Production
+
+tags:
+  - name: Authentification
+  - name: Paiements
+  - name: Solde & statistiques
+  - name: Webhooks
+  - name: Reversements
+  - name: Sécurité
+  - name: Rapports
+  - name: Compte marchand
+
+security: []
+
+components:
+  securitySchemes:
+    ApiKey:
+      type: apiKey
+      in: header
+      name: x-api-key
+      description: Votre clé API publique (préfixe `DJN-`). Visible dans l'espace Développeur du dashboard.
+    ApiSecret:
+      type: apiKey
+      in: header
+      name: x-api-secret
+      description: Votre secret API (64 caractères hexadécimaux). Communiqué une seule fois par SMS à la création du compte ou à la régénération.
+    MerchantToken:
+      type: apiKey
+      in: header
+      name: authenticationtoken
+      description: JWT obtenu via `POST /user/login-merchant`. À passer tel quel, **sans** préfixe `Bearer`.
+
+  parameters:
+    MerchantReference:
+      name: merchant_reference
+      in: query
+      required: true
+      description: Référence de votre compte marchand (celle choisie à l'inscription, ex. `beautyshop`).
+      schema:
+        type: string
+        example: beautyshop
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        statusCode:
+          type: integer
+          example: 401
+        message:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+          example: Invalid API credentials
+        error:
+          type: string
+          example: Unauthorized
+
+    Metadata:
+      type: object
+      description: Données libres que vous souhaitez retrouver dans le webhook et dans la liste des transactions.
+      properties:
+        order_id:
+          type: string
+          description: Identifiant de la commande dans votre système. Il est aussi utilisé comme "référence marchand" dans le dashboard et les exports.
+          example: CMD-2026-00042
+        email:
+          type: string
+          description: Email du client.
+          example: client@example.com
+        phoneNumber:
+          type: string
+          description: Numéro du client (format international recommandé).
+          example: "+2250700000000"
+
+    PaymentStatus:
+      type: string
+      enum: [PENDING, SUCCESS, FAILED]
+      description: |
+        - `PENDING` — lien créé, en attente de paiement (expire après 24 h).
+        - `SUCCESS` — paiement confirmé par l'opérateur.
+        - `FAILED` — paiement refusé, annulé ou lien expiré.
+
+    CreatePaymentLinkRequest:
+      type: object
+      required: [amount, merchant_reference, return_url, cancel_url]
+      properties:
+        amount:
+          type: integer
+          minimum: 101
+          description: Montant à encaisser en FCFA. Doit être **strictement supérieur à 100**.
+          example: 5000
+        merchant_reference:
+          type: string
+          description: Référence de votre compte marchand.
+          example: beautyshop
+        return_url:
+          type: string
+          format: uri
+          description: URL vers laquelle le client est redirigé après un paiement réussi.
+          example: https://example.com/success
+        cancel_url:
+          type: string
+          format: uri
+          description: URL vers laquelle le client est redirigé après un échec ou une annulation.
+          example: https://example.com/cancel
+        isQrCode:
+          type: boolean
+          default: false
+          description: Si `true`, la réponse contient un QR code (image PNG encodée en data URL) au lieu de l'URL de paiement.
+          example: false
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+
+    CreatePaymentLinkResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        paymentLink:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+              description: Identifiant interne du lien.
+              example: 50f668cf-2a84-41e7-9bcb-6874b0d5d286
+            message:
+              type: string
+              example: Payment link created successfully
+            reference:
+              type: string
+              description: Référence du paiement (préfixe `PAY`). Conservez-la, c'est la clé pour interroger le statut et rapprocher le webhook.
+              example: PAYR9PVUYEWVF
+            paymentUrl:
+              type: string
+              format: uri
+              description: URL de la page de paiement hébergée. Présente uniquement si `isQrCode` est `false`.
+              example: https://checkout.djonanko.ci/PAYR9PVUYEWVF
+            qrcode:
+              type: string
+              description: Image PNG du QR code encodée en data URL (`data:image/png;base64,…`). Présente uniquement si `isQrCode` est `true`.
+              example: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA…
+
+    PaymentStatusResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 50f668cf-2a84-41e7-9bcb-6874b0d5d286
+        reference:
+          type: string
+          example: PAYR9PVUYEWVF
+        order_id:
+          type: string
+          nullable: true
+          description: Le `metadata.order_id` transmis à la création.
+          example: CMD-2026-00042
+        status:
+          $ref: "#/components/schemas/PaymentStatus"
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-09-18T08:00:00.000Z"
+
+    Payment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        reference:
+          type: string
+          example: PAYR9PVUYEWVF
+        amount:
+          type: integer
+          example: 5000
+        country:
+          type: string
+          description: Code pays du paiement (CI, BF, ML, CM).
+          example: CI
+        provider:
+          type: string
+          nullable: true
+          description: Agrégateur ayant traité le paiement.
+        order_id:
+          type: string
+          nullable: true
+          example: CMD-2026-00042
+        senderNumber:
+          type: string
+          nullable: true
+          description: Numéro mobile money du client payeur.
+          example: "+2250700000000"
+        senderOperateur:
+          type: string
+          nullable: true
+          description: Opérateur du client (`Orange`, `Wave`, `Mtn`, `Moov`, `Visa`). La casse peut varier — comparez en minuscules.
+          example: Wave
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+        status:
+          $ref: "#/components/schemas/PaymentStatus"
+        createdAt:
+          type: string
+          format: date-time
+
+    TransactionCounts:
+      type: object
+      properties:
+        successTransactions:
+          type: integer
+          example: 120
+        pendingTransactions:
+          type: integer
+          example: 4
+        failedTransactions:
+          type: integer
+          example: 11
+        allTransactions:
+          type: integer
+          example: 135
+
+    MonthlyFlow:
+      type: object
+      properties:
+        month:
+          type: string
+          description: Mois en cours, en français.
+          example: septembre 2026
+        totalFlow:
+          type: integer
+          description: Somme des paiements `SUCCESS` du mois, en FCFA.
+          example: 1250000
+        transactionCount:
+          type: integer
+          description: Nombre total de paiements (tous statuts) du mois.
+          example: 135
+        conversionRate:
+          type: integer
+          description: Part des paiements réussis, en pourcentage entier.
+          example: 89
+
+    WebhookPayload:
+      type: object
+      description: Corps JSON envoyé en `POST` sur votre URL de webhook.
+      required: [status, amount, reference, provider, country_code, created_date]
+      properties:
+        status:
+          type: string
+          enum: [SUCCESS, FAILED]
+          example: SUCCESS
+        amount:
+          type: integer
+          description: Montant du paiement en FCFA.
+          example: 5000
+        fees:
+          type: number
+          description: Frais prélevés sur le paiement. **Présent uniquement lorsque `status` vaut `SUCCESS`.**
+          example: 100
+        reference:
+          type: string
+          description: Référence du paiement (`PAY…`), identique à celle renvoyée à la création du lien.
+          example: PAYR9PVUYEWVF
+        provider:
+          type: string
+          description: Opérateur utilisé par le client.
+          example: Wave
+        country_code:
+          type: string
+          example: CI
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+        created_date:
+          type: string
+          format: date-time
+          description: Date de création du lien de paiement.
+          example: "2026-09-18T08:00:00.000Z"
+
+    WebhookDelivery:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        url:
+          type: string
+          format: uri
+          example: https://example.com/webhooks/djonanko
+        payload:
+          $ref: "#/components/schemas/WebhookPayload"
+        status:
+          type: string
+          enum: [PENDING, SUCCESS, FAILED, ABANDONED]
+          description: |
+            - `FAILED` — échec temporaire, un rejeu automatique est programmé.
+            - `ABANDONED` — échec définitif (8 tentatives épuisées ou erreur non rejouable 400/401/404/422).
+        attempts:
+          type: integer
+          example: 8
+        maxAttempts:
+          type: integer
+          example: 8
+        lastHttpStatus:
+          type: integer
+          nullable: true
+          example: 403
+        lastError:
+          type: string
+          nullable: true
+          description: Dernière erreur, tronquée à 2000 caractères.
+        nextRetryAt:
+          type: string
+          format: date-time
+          nullable: true
+        deliveredAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    PayoutAccountType:
+      type: string
+      enum: [orange, moov, mtn, wave, bank]
+
+    PayoutAccount:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        merchantId:
+          type: string
+          format: uuid
+        type:
+          $ref: "#/components/schemas/PayoutAccountType"
+        isPrimary:
+          type: boolean
+          description: Le compte principal reçoit par défaut toutes les demandes de reversement.
+        phoneNumber:
+          type: string
+          nullable: true
+          example: "+2250700000000"
+        country:
+          type: string
+          nullable: true
+          example: CI
+        beneficiaryName:
+          type: string
+          nullable: true
+        bankId:
+          type: string
+          nullable: true
+        bankName:
+          type: string
+          nullable: true
+        bankCode:
+          type: string
+          nullable: true
+        branchCode:
+          type: string
+          nullable: true
+        accountNumber:
+          type: string
+          nullable: true
+        ribKey:
+          type: string
+          nullable: true
+        swiftCode:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreatePayoutAccountRequest:
+      type: object
+      required: [merchant_reference, type]
+      properties:
+        merchant_reference:
+          type: string
+          example: beautyshop
+        type:
+          $ref: "#/components/schemas/PayoutAccountType"
+        isPrimary:
+          type: boolean
+          description: Définir ce compte comme moyen principal de reversement.
+          example: true
+        phoneNumber:
+          type: string
+          description: "**Mobile money uniquement.** Numéro qui recevra les fonds."
+          example: "+2250700000000"
+        country:
+          type: string
+          description: "**Mobile money uniquement.** Code pays (CI, BF, ML, CM)."
+          example: CI
+        beneficiaryName:
+          type: string
+          description: "**Banque uniquement.** Nom du titulaire du compte."
+          example: SARL Beauty Shop
+        bankId:
+          type: string
+          description: "**Banque uniquement.** Identifiant de la banque, obtenu via `GET /banks/active`."
+        branchCode:
+          type: string
+          description: "**Banque uniquement.** Code agence."
+          example: "01001"
+        accountNumber:
+          type: string
+          description: "**Banque uniquement.** Numéro de compte."
+          example: "012345678901"
+        ribKey:
+          type: string
+          description: "**Banque uniquement.** Clé RIB."
+          example: "45"
+        swiftCode:
+          type: string
+          pattern: "^[A-Z0-9]{8}([A-Z0-9]{3})?$"
+          description: "**Banque uniquement.** Code SWIFT / BIC, 8 ou 11 caractères."
+          example: SGBCCIABXXX
+
+    Bank:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: Société Générale Côte d'Ivoire
+        code:
+          type: string
+          example: SGBCI
+        logo:
+          type: string
+          nullable: true
+        isActive:
+          type: boolean
+
+    DisbursementStatus:
+      type: string
+      enum: [PENDING, PROCESSING, SUCCESS, FAILED]
+      description: |
+        - `PENDING` — demande créée, en attente de validation par Djonanko.
+        - `PROCESSING` — validée, transfert lancé chez l'opérateur.
+        - `SUCCESS` — fonds reçus sur le compte de reversement.
+        - `FAILED` — transfert échoué (voir `failureReason`).
+
+    Disbursement:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        reference:
+          type: string
+          description: Référence du marchand.
+          example: beautyshop
+        amount:
+          type: number
+          example: 50000
+        destination:
+          type: string
+          description: Numéro mobile money ou numéro de compte bancaire cible.
+          example: "+2250700000000"
+        country:
+          type: string
+          example: CI
+        operator:
+          type: string
+          description: Type du compte cible (`orange`, `moov`, `mtn`, `wave`, `bank`).
+          example: wave
+        status:
+          $ref: "#/components/schemas/DisbursementStatus"
+        payoutAccountId:
+          type: string
+          nullable: true
+        payoutDetails:
+          type: object
+          nullable: true
+          description: Instantané du compte de reversement au moment de la demande.
+        failureReason:
+          type: string
+          nullable: true
+        processedManually:
+          type: boolean
+        validatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        merchantName:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    AllowedIp:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        merchantId:
+          type: string
+          format: uuid
+        ipAddress:
+          type: string
+          description: IPv4, IPv6 ou plage CIDR normalisée.
+          example: 41.207.12.34
+        label:
+          type: string
+          nullable: true
+          example: Serveur de production
+        createdAt:
+          type: string
+          format: date-time
+
+    Report:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        period:
+          type: string
+          description: Mois couvert, au format `YYYY-MM`.
+          example: "2026-08"
+        periodLabel:
+          type: string
+          example: Août 2026
+        periodStart:
+          type: string
+          format: date-time
+        periodEnd:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [PENDING, READY, FAILED]
+        filename:
+          type: string
+          nullable: true
+          example: rapport-beautyshop-2026-08.pdf
+        fileUrl:
+          type: string
+          format: uri
+          nullable: true
+        fileSize:
+          type: integer
+          nullable: true
+        summary:
+          type: object
+          nullable: true
+          description: Chiffres clés du mois (montant total, nombre de paiements, répartition par opérateur…).
+        error:
+          type: string
+          nullable: true
+        generatedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    Merchant:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: Beauty Shop
+        email:
+          type: string
+          example: contact@beautyshop.ci
+        phoneNumber:
+          type: string
+          example: "+2250700000000"
+        reference:
+          type: string
+          example: beautyshop
+        description:
+          type: string
+          nullable: true
+        successUrl:
+          type: string
+          nullable: true
+        failedUrl:
+          type: string
+          nullable: true
+        webhookUrl:
+          type: string
+          nullable: true
+          example: https://example.com/webhooks/djonanko
+        apiKey:
+          type: string
+          example: DJN-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+        balance:
+          type: string
+          description: Solde disponible en FCFA (renvoyé sous forme de chaîne décimale).
+          example: "125000.00"
+        isActive:
+          type: boolean
+        country:
+          type: string
+          example: CI
+        createdAt:
+          type: string
+          format: date-time
+
+  responses:
+    Unauthorized:
+      description: Identifiants manquants ou invalides.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            statusCode: 401
+            message: Invalid API credentials
+            error: Unauthorized
+    NotFound:
+      description: Ressource introuvable.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            statusCode: 404
+            message: Merchant not found
+            error: Not Found
+    BadRequest:
+      description: Requête invalide.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+paths:
+  # ---------------------------------------------------------------------------
+  # Authentification
+  # ---------------------------------------------------------------------------
+  /user/login-merchant:
+    post:
+      tags: [Authentification]
+      operationId: loginMerchant
+      summary: Obtenir un jeton marchand
+      description: |
+        Authentifie un marchand avec les identifiants reçus par SMS à la création du compte
+        (numéro de téléphone + mot de passe) et renvoie un JWT à passer dans l'en-tête
+        `authenticationtoken` des endpoints du dashboard.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [numero, password]
+              properties:
+                numero:
+                  type: string
+                  description: Numéro de téléphone du compte marchand.
+                  example: "0700000000"
+                password:
+                  type: string
+                  format: password
+                  example: "••••••••"
+      responses:
+        "201":
+          description: Jeton généré.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                    description: JWT à utiliser dans l'en-tête `authenticationtoken`.
+                    example: "<jwt>"
+                  refresh_token:
+                    type: string
+                  user:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      numero:
+                        type: string
+                      fullname:
+                        type: string
+                      email:
+                        type: string
+                      merchant_id:
+                        type: string
+                        format: uuid
+                        description: Identifiant du compte marchand lié.
+                      userType:
+                        type: string
+                        example: MERCHANT
+        "404":
+          description: Identifiants incorrects.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                statusCode: 404
+                message: Connexion impossible, vérifiez vos accès ou contactez l'administrateur
+                error: Not Found
+
+  /web-merchant/regenerate-api-key:
+    post:
+      tags: [Authentification]
+      operationId: regenerateApiKey
+      summary: Régénérer le secret API
+      description: |
+        Génère un nouveau `x-api-secret`. **L'ancien secret est invalidé immédiatement** ;
+        la clé `x-api-key` reste inchangée. Le nouveau secret est aussi envoyé par SMS au numéro du compte.
+      security:
+        - MerchantToken: []
+      parameters:
+        - $ref: "#/components/parameters/MerchantReference"
+      responses:
+        "201":
+          description: Nouveau secret généré.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  apiKey:
+                    type: string
+                    example: DJN-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+                  apiSecret:
+                    type: string
+                    description: Nouveau secret, affiché une seule fois.
+                    example: "<nouveau_secret_64_caracteres>"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ---------------------------------------------------------------------------
+  # Paiements
+  # ---------------------------------------------------------------------------
+  /web-merchant/create-web-payment-link:
+    post:
+      tags: [Paiements]
+      operationId: createWebPaymentLink
+      summary: Créer un lien de paiement
+      description: |
+        Crée une intention de paiement et renvoie soit une **URL de page de paiement hébergée**,
+        soit un **QR code** (`isQrCode: true`). Le lien expire au bout de **24 heures**.
+
+        Une fois le client redirigé vers `paymentUrl`, il choisit son opérateur, saisit son numéro
+        et confirme sur son téléphone. Vous êtes ensuite notifié par [webhook](/guides/webhooks)
+        et le client est redirigé vers `return_url` ou `cancel_url`.
+      security:
+        - ApiKey: []
+          ApiSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePaymentLinkRequest"
+            examples:
+              lien:
+                summary: Lien de paiement
+                value:
+                  amount: 5000
+                  merchant_reference: beautyshop
+                  return_url: https://example.com/success
+                  cancel_url: https://example.com/cancel
+                  metadata:
+                    order_id: CMD-2026-00042
+                    email: client@example.com
+                    phoneNumber: "+2250700000000"
+              qrcode:
+                summary: QR code
+                value:
+                  amount: 5000
+                  merchant_reference: beautyshop
+                  isQrCode: true
+                  return_url: https://example.com/success
+                  cancel_url: https://example.com/cancel
+                  metadata:
+                    order_id: CMD-2026-00042
+      responses:
+        "201":
+          description: Lien créé.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatePaymentLinkResponse"
+              examples:
+                lien:
+                  summary: Lien de paiement
+                  value:
+                    success: true
+                    paymentLink:
+                      id: 50f668cf-2a84-41e7-9bcb-6874b0d5d286
+                      message: Payment link created successfully
+                      paymentUrl: https://checkout.djonanko.ci/PAYR9PVUYEWVF
+                      reference: PAYR9PVUYEWVF
+                qrcode:
+                  summary: QR code
+                  value:
+                    success: true
+                    paymentLink:
+                      id: 50f668cf-2a84-41e7-9bcb-6874b0d5d286
+                      message: Payment link created successfully
+                      qrcode: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA…
+                      reference: PAYR9PVUYEWVF
+        "400":
+          description: Montant invalide (doit être > 100) ou URL manquante.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                statusCode: 400
+                message: Amount must be greater than 100
+                error: Bad Request
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Compte marchand désactivé.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                statusCode: 403
+                message: Merchant account is not active
+                error: Forbidden
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /web-merchant/payment/status:
+    get:
+      tags: [Paiements]
+      operationId: getPaymentStatus
+      summary: Vérifier le statut d'un paiement
+      description: |
+        Renvoie le statut courant d'un paiement à partir de sa référence `PAY…`.
+        Utilisez cet endpoint pour **confirmer côté serveur** un webhook reçu, ou pour interroger
+        un paiement dont vous n'avez pas reçu de notification.
+      security:
+        - MerchantToken: []
+      parameters:
+        - name: payment_reference
+          in: query
+          required: true
+          description: Référence du paiement renvoyée à la création du lien.
+          schema:
+            type: string
+            example: PAYR9PVUYEWVF
+      responses:
+        "200":
+          description: Statut du paiement.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentStatusResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Référence inconnue.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                statusCode: 404
+                message: Payment not found
+                error: Not Found
+
+  /web-merchant/payments:
+    get:
+      tags: [Paiements]
+      operationId: listPayments
+      summary: Lister les paiements
+      description: Renvoie tous les paiements du marchand, du plus récent au plus ancien.
+      security:
+        - MerchantToken: []
+      parameters:
+        - $ref: "#/components/parameters/MerchantReference"
+        - name: recents
+          in: query
+          required: false
+          description: Si `true`, limite la réponse aux 10 derniers paiements.
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Liste des paiements.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Payment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /web-merchant/payments/search:
+    get:
+      tags: [Paiements]
+      operationId: searchPayments
+      summary: Rechercher des paiements
+      description: Recherche filtrée, identique à celle de l'onglet **Transactions** du dashboard.
+      security:
+        - MerchantToken: []
+      parameters:
+        - $ref: "#/components/parameters/MerchantReference"
+        - name: date_min
+          in: query
+          description: Date de début (ISO 8601, inclusive).
+          schema:
+            type: string
+            format: date
+            example: "2026-09-01"
+        - name: date_max
+          in: query
+          description: Date de fin (ISO 8601, inclusive).
+          schema:
+            type: string
+            format: date
+            example: "2026-09-30"
+        - name: reference
+          in: query
+          description: Recherche partielle sur la référence `PAY…` ou sur `order_id`.
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/PaymentStatus"
+        - name: operator
+          in: query
+          description: Opérateur du client.
+          schema:
+            type: string
+            enum: [orange, mtn, moov, wave, visa]
+        - name: country
+          in: query
+          description: Code pays.
+          schema:
+            type: string
+            enum: [CI, BF, ML, CM]
+      responses:
+        "200":
+          description: Paiements correspondant aux filtres.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Payment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /web-merchant/payments/export:
+    get:
+      tags: [Paiements]
+      operationId: exportPayments
+      summary: Exporter les paiements
+      description: |
+        Exporte les paiements filtrés au format **PDF**, **Excel** ou **CSV**.
+        La réponse est un fichier binaire (`Content-Disposition: attachment`).
+      security:
+        - MerchantToken: []
+      parameters:
+        - $ref: "#/components/parameters/MerchantReference"
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [xlsx, pdf, csv]
+            default: xlsx
+        - name: date_min
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: date_max
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: reference
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/PaymentStatus"
+        - name: operator
+          in: query
+          schema:
+            type: string
+            enum: [orange, mtn, moov, wave, visa]
+        - name: country
+          in: query
+          schema:
+            type: string
+            enum: [CI, BF, ML, CM]
+      responses:
+        "200":
+          description: Fichier exporté.
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            text/csv:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ---------------------------------------------------------------------------
+  # Solde & statistiques
+  # ---------------------------------------------------------------------------
+  /web-merchant/get-balance:
+    get:
+      tags: [Solde & statistiques]
+      operationId: getBalance
+      summary: Consulter le solde
+      description: Solde disponible pour reversement, en FCFA. Le solde est crédité à chaque paiement `SUCCESS`, net de frais.
+      security:
+        - MerchantToken: []
+      parameters:
+        - $ref: "#/components/parameters/MerchantReference"
+      responses:
+        "200":
+          description: Solde du marchand (chaîne décimale).
+          content:
+            application/json:
+              schema:
+                type: string
+                example: "125000.00"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /web-merchant/merchants-transactions-count:
+    get:
+      tags: [Solde & statistiques]
+      operationId: getTransactionCounts
+      summary: Compteurs de transactions
+      description: Nombre de paiements par statut depuis la création du compte.
+      security:
+        - MerchantToken: []
+      parameters:
+        - $ref: "#/components/parameters/MerchantReference"
+      responses:
+        "200":
+          description: Compteurs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionCounts"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /web-merchant/merchants-monthly-transactions-count:
+    get:
+      tags: [Solde & statistiques]
+      operationId: getMonthlyTransactionCounts
+      summary: Compteurs du mois en cours
+      security:
+        - MerchantToken: []
+      parameters:
+        - $ref: "#/components/parameters/MerchantReference"
+      responses:
+        "200":
+          description: Compteurs du mois.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionCounts"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /web-merchant/merchants-transactions-flow:
+    get:
+      tags: [Solde & statistiques]
+      operationId: getMonthlyFlow
+      summary: Volume du mois en cours
+      description: Volume encaissé, nombre de transactions et taux de conversion du mois en cours.
+      security:
+        - MerchantToken: []
+      parameters:
+        - $ref: "#/components/parameters/MerchantReference"
+      responses:
+        "200":
+          description: Volume mensuel.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MonthlyFlow"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ---------------------------------------------------------------------------
+  # Webhooks
+  # ---------------------------------------------------------------------------
+  /web-merchant/set-webhook-url:
+    patch:
+      tags: [Webhooks]
+      operationId: setWebhookUrl
+      summary: Définir l'URL de webhook
+      description: |
+        Enregistre l'URL HTTPS sur laquelle Djonanko enverra les notifications de paiement.
+        L'URL **ne doit pas être protégée par une authentification** et doit répondre `2xx` rapidement.
+      security:
+        - MerchantToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reference, webhookUrl]
+              properties:
+                reference:
+                  type: string
+                  description: Référence du marchand.
+                  example: beautyshop
+                webhookUrl:
+                  type: string
+                  format: uri
+                  example: https://example.com/webhooks/djonanko
+      responses:
+        "200":
+          description: URL enregistrée.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Webhook URL updated successfully
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /web-merchant/webhooks/failed:
+    get:
+      tags: [Webhooks]
+      operationId: listFailedWebhooks
+      summary: Lister les webhooks en échec
+      description: |
+        Liste les livraisons de webhook en échec du marchand authentifié, les plus récentes d'abord.
+        Par défaut, renvoie les statuts `FAILED` et `ABANDONED`.
+      security:
+        - MerchantToken: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [PENDING, SUCCESS, FAILED, ABANDONED]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Livraisons en échec.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                    example: 42
+                  limit:
+                    type: integer
+                    example: 50
+                  offset:
+                    type: integer
+                    example: 0
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/WebhookDelivery"
+        "400":
+          description: Statut inconnu.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /web-merchant/webhooks/{id}/replay:
+    post:
+      tags: [Webhooks]
+      operationId: replayWebhook
+      summary: Rejouer un webhook
+      description: |
+        Rejoue **immédiatement** une livraison en échec et renvoie le résultat de la tentative.
+        Le compteur de tentatives est remis à zéro. L'appel est bloquant le temps de la tentative (timeout 15 s).
+      security:
+        - MerchantToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifiant de la livraison (`items[].id` de la liste des échecs).
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "201":
+          description: Résultat du rejeu.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  delivered:
+                    type: boolean
+                    example: true
+                  delivery:
+                    $ref: "#/components/schemas/WebhookDelivery"
+        "400":
+          description: La livraison est déjà en `SUCCESS`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Livraison introuvable (ou appartenant à un autre marchand).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ---------------------------------------------------------------------------
+  # Reversements
+  # ---------------------------------------------------------------------------
+  /web-merchant/request-disbursement:
+    post:
+      tags: [Reversements]
+      operationId: requestDisbursement
+      summary: Demander un reversement
+      description: |
+        Crée une demande de reversement de votre solde vers votre **compte principal de reversement**.
+        Montant minimum : **500 FCFA**. La demande passe en `PENDING` jusqu'à validation par Djonanko.
+
+        Si aucun compte principal n'est enregistré, vous devez fournir `destination` et `operator`.
+      security:
+        - MerchantToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reference, amount]
+              properties:
+                reference:
+                  type: string
+                  description: Référence du marchand.
+                  example: beautyshop
+                amount:
+                  type: number
+                  minimum: 500
+                  description: Montant en FCFA (≥ 500 et ≤ solde disponible).
+                  example: 50000
+                destination:
+                  type: string
+                  description: Numéro cible. **Ignoré** si un compte principal existe.
+                  example: "+2250700000000"
+                country:
+                  type: string
+                  example: CI
+                operator:
+                  type: string
+                  description: "`orange`, `moov`, `mtn` ou `wave`. **Ignoré** si un compte principal existe."
+                  example: wave
+      responses:
+        "201":
+          description: Demande créée.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Disbursement"
+        "400":
+          description: Montant trop faible, solde insuffisant ou aucun compte principal.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              examples:
+                solde:
+                  value:
+                    statusCode: 400
+                    message: "Solde insuffisant : votre solde disponible est de 12 000 FCFA"
+                    error: Bad Request
+                minimum:
+                  value:
+                    statusCode: 400
+                    message: Le montant minimum est de 500 FCFA
+                    error: Bad Request
+                compte:
+                  value:
+                    statusCode: 400
+                    message: Aucun moyen principal de reversement n'est enregistré. Ajoutez un contact principal dans « Gestion des comptes ».
+                    error: Bad Request
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /web-merchant/list-disbursements:
+    get:
+      tags: [Reversements]
+      operationId: listDisbursements
+      summary: Lister les reversements
+      security:
+        - MerchantToken: []
+      parameters:
+        - $ref: "#/components/parameters/MerchantReference"
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/DisbursementStatus"
+      responses:
+        "200":
+          description: Reversements, du plus récent au plus ancien.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Disbursement"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /web-merchant/refunds-stats:
+    get:
+      tags: [Reversements]
+      operationId: getDisbursementStats
+      summary: Compteurs de reversements
+      security:
+        - MerchantToken: []
+      parameters:
+        - $ref: "#/components/parameters/MerchantReference"
+      responses:
+        "200":
+          description: Compteurs par statut.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requestSuccess:
+                    type: integer
+                    example: 12
+                  requestPending:
+                    type: integer
+                    example: 1
+                  requestFailed:
+                    type: integer
+                    example: 0
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /web-merchant/payout-accounts:
+    get:
+      tags: [Reversements]
+      operationId: listPayoutAccounts
+      summary: Lister les comptes de reversement
+      security:
+        - MerchantToken: []
+      parameters:
+        - $ref: "#/components/parameters/MerchantReference"
+      responses:
+        "200":
+          description: Comptes enregistrés.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PayoutAccount"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [Reversements]
+      operationId: createPayoutAccount
+      summary: Ajouter un compte de reversement
+      description: |
+        Ajoute un compte **mobile money** (`orange`, `moov`, `mtn`, `wave`) ou **bancaire** (`bank`).
+        Les champs requis dépendent du `type`.
+      security:
+        - MerchantToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePayoutAccountRequest"
+            examples:
+              mobile:
+                summary: Mobile money
+                value:
+                  merchant_reference: beautyshop
+                  type: wave
+                  isPrimary: true
+                  phoneNumber: "+2250700000000"
+                  country: CI
+              banque:
+                summary: Compte bancaire
+                value:
+                  merchant_reference: beautyshop
+                  type: bank
+                  beneficiaryName: SARL Beauty Shop
+                  bankId: 6f1c2b3a-0000-4000-8000-000000000000
+                  branchCode: "01001"
+                  accountNumber: "012345678901"
+                  ribKey: "45"
+                  swiftCode: SGBCCIABXXX
+      responses:
+        "201":
+          description: Compte créé.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PayoutAccount"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /web-merchant/payout-accounts/{id}/set-primary:
+    patch:
+      tags: [Reversements]
+      operationId: setPrimaryPayoutAccount
+      summary: Définir le compte principal
+      security:
+        - MerchantToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/MerchantReference"
+      responses:
+        "200":
+          description: Compte mis à jour.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PayoutAccount"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /web-merchant/payout-accounts/{id}:
+    delete:
+      tags: [Reversements]
+      operationId: deletePayoutAccount
+      summary: Supprimer un compte de reversement
+      security:
+        - MerchantToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/MerchantReference"
+      responses:
+        "200":
+          description: Compte supprimé.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  deleted:
+                    type: boolean
+                    example: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /banks/active:
+    get:
+      tags: [Reversements]
+      operationId: listActiveBanks
+      summary: Lister les banques disponibles
+      description: Banques acceptées pour les comptes de reversement bancaires. Utilisez `id` dans `bankId`.
+      responses:
+        "200":
+          description: Banques actives.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Bank"
+
+  # ---------------------------------------------------------------------------
+  # Sécurité
+  # ---------------------------------------------------------------------------
+  /web-merchant/allowed-ips:
+    get:
+      tags: [Sécurité]
+      operationId: listAllowedIps
+      summary: Lister les IPs autorisées
+      description: Renvoie les adresses IP enregistrées ainsi que la date d'entrée en vigueur du whitelisting.
+      security:
+        - MerchantToken: []
+      parameters:
+        - $ref: "#/components/parameters/MerchantReference"
+      responses:
+        "200":
+          description: IPs autorisées.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enforcementDate:
+                    type: string
+                    format: date-time
+                    description: Date à partir de laquelle seules les IPs enregistrées peuvent appeler l'API.
+                    example: "2026-09-25T00:00:00.000Z"
+                  enforced:
+                    type: boolean
+                    description: "`true` une fois le whitelisting actif."
+                  maxIps:
+                    type: integer
+                    example: 20
+                  ips:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AllowedIp"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [Sécurité]
+      operationId: createAllowedIp
+      summary: Ajouter une IP autorisée
+      description: Accepte une IPv4, une IPv6 ou une plage CIDR (ex. `41.207.12.0/24`). Maximum 20 entrées par marchand.
+      security:
+        - MerchantToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [merchant_reference, ipAddress]
+              properties:
+                merchant_reference:
+                  type: string
+                  example: beautyshop
+                ipAddress:
+                  type: string
+                  maxLength: 64
+                  example: 41.207.12.34
+                label:
+                  type: string
+                  maxLength: 100
+                  example: Serveur de production
+      responses:
+        "201":
+          description: IP ajoutée.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AllowedIp"
+        "400":
+          description: IP invalide, déjà enregistrée, ou limite atteinte.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                statusCode: 400
+                message: Cette adresse IP est déjà enregistrée
+                error: Bad Request
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /web-merchant/allowed-ips/{id}:
+    delete:
+      tags: [Sécurité]
+      operationId: deleteAllowedIp
+      summary: Retirer une IP autorisée
+      security:
+        - MerchantToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/MerchantReference"
+      responses:
+        "200":
+          description: IP retirée.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  deleted:
+                    type: boolean
+                    example: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ---------------------------------------------------------------------------
+  # Rapports
+  # ---------------------------------------------------------------------------
+  /web-merchant/reports:
+    get:
+      tags: [Rapports]
+      operationId: listReports
+      summary: Lister les rapports mensuels
+      description: Rapports PDF générés automatiquement chaque début de mois pour le mois écoulé.
+      security:
+        - MerchantToken: []
+      parameters:
+        - $ref: "#/components/parameters/MerchantReference"
+      responses:
+        "200":
+          description: Rapports, du plus récent au plus ancien.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Report"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /web-merchant/reports/generate:
+    post:
+      tags: [Rapports]
+      operationId: generateReport
+      summary: Générer un rapport
+      description: Génère (ou regénère) le rapport d'un mois **écoulé**. Le mois en cours n'est pas disponible.
+      security:
+        - MerchantToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [merchant_reference, period]
+              properties:
+                merchant_reference:
+                  type: string
+                  example: beautyshop
+                period:
+                  type: string
+                  pattern: "^\\d{4}-(0[1-9]|1[0-2])$"
+                  description: Mois au format `YYYY-MM`.
+                  example: "2026-08"
+      responses:
+        "201":
+          description: Rapport généré.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Report"
+        "400":
+          description: Période invalide ou mois non terminé.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                statusCode: 400
+                message: Le rapport d'un mois n'est disponible qu'une fois le mois terminé
+                error: Bad Request
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /web-merchant/reports/{id}/download:
+    get:
+      tags: [Rapports]
+      operationId: downloadReport
+      summary: Télécharger un rapport
+      description: Redirige (`302`) vers l'URL du fichier PDF.
+      security:
+        - MerchantToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/MerchantReference"
+      responses:
+        "302":
+          description: Redirection vers le PDF.
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ---------------------------------------------------------------------------
+  # Compte marchand
+  # ---------------------------------------------------------------------------
+  /web-merchant:
+    post:
+      tags: [Compte marchand]
+      operationId: registerMerchant
+      summary: Créer un compte marchand
+      description: |
+        Crée un compte marchand. Les identifiants (clé API, secret API, référence, identifiant et mot de passe
+        du dashboard) sont envoyés **par SMS** au numéro fourni. Le compte doit ensuite être **activé par Djonanko**
+        avant de pouvoir encaisser.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, reference, email, phoneNumber, country]
+              properties:
+                name:
+                  type: string
+                  description: Nom de l'entreprise (unique).
+                  example: Beauty Shop
+                reference:
+                  type: string
+                  description: Référence unique, un seul mot (lettres, chiffres, `_`).
+                  example: beautyshop
+                email:
+                  type: string
+                  format: email
+                  example: contact@beautyshop.ci
+                phoneNumber:
+                  type: string
+                  description: Numéro qui recevra les identifiants par SMS.
+                  example: "+2250700000000"
+                country:
+                  type: string
+                  enum: [CI, BF, ML, CM]
+                  example: CI
+                description:
+                  type: string
+                  example: Boutique de cosmétiques en ligne
+                webhookUrl:
+                  type: string
+                  format: uri
+                  example: https://example.com/webhooks/djonanko
+      responses:
+        "201":
+          description: Compte créé, identifiants envoyés par SMS.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+                    example: Beauty Shop
+        "500":
+          description: Email invalide, ou nom / email déjà utilisé.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /web-merchant/get-merchant-by-id:
+    get:
+      tags: [Compte marchand]
+      operationId: getMerchantById
+      summary: Consulter le profil marchand
+      description: Renvoie le profil du compte (référence, URLs, clé API publique, solde, statut d'activation).
+      security:
+        - MerchantToken: []
+      parameters:
+        - name: id
+          in: query
+          required: true
+          description: "`merchant_id` renvoyé à la connexion."
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Profil marchand.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Merchant"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+webhooks:
+  paymentNotification:
+    post:
+      tags: [Webhooks]
+      operationId: paymentNotification
+      summary: Notification de paiement
+      description: |
+        Envoyée en `POST` sur votre URL de webhook dès qu'un paiement aboutit (`SUCCESS`) ou échoue (`FAILED`).
+
+        - En-têtes : `Content-Type: application/json`, `User-Agent: Djonanko-Webhook/1.0`.
+        - Timeout : 15 s. Répondez `2xx` le plus vite possible et traitez en asynchrone.
+        - Rejeu automatique : 3 tentatives immédiates (2 s, 4 s, 8 s) puis 5 min → 15 min → 1 h → 6 h → 24 h.
+        - Les réponses `400`, `401`, `404` et `422` **ne sont pas rejouées**.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebhookPayload"
+            examples:
+              success:
+                summary: Paiement réussi
+                value:
+                  status: SUCCESS
+                  amount: 5000
+                  fees: 100
+                  reference: PAYR9PVUYEWVF
+                  provider: Wave
+                  country_code: CI
+                  metadata:
+                    order_id: CMD-2026-00042
+                    email: client@example.com
+                    phoneNumber: "+2250700000000"
+                  created_date: "2026-09-18T08:00:00.000Z"
+              failed:
+                summary: Paiement échoué
+                value:
+                  status: FAILED
+                  amount: 5000
+                  reference: PAYR9PVUYEWVF
+                  provider: Orange
+                  country_code: CI
+                  metadata:
+                    order_id: CMD-2026-00042
+                  created_date: "2026-09-18T08:00:00.000Z"
+      responses:
+        "200":
+          description: Accusé de réception. Tout code `2xx` est accepté.

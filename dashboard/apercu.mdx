@@ -1,0 +1,45 @@
+---
+title: "Tableau de bord"
+description: "Vue d'ensemble de votre activité : compteurs, volume du mois et dernières collectes."
+icon: "gauge"
+---
+
+Le dashboard marchand est votre espace de gestion. Il est accessible avec les identifiants (numéro de téléphone + mot de passe) reçus par SMS à la création du compte.
+
+## Navigation
+
+| Onglet | Ce que vous y faites |
+|---|---|
+| **Tableau de bord** | Vue d'ensemble : compteurs, volume du mois, dernières transactions |
+| [**Transactions**](/dashboard/transactions) | Rechercher, filtrer et exporter vos collectes |
+| [**Remboursements**](/dashboard/remboursements) | Demander et suivre vos reversements |
+| [**Gestion des comptes**](/dashboard/gestion-des-comptes) | Vos comptes mobile money et bancaires de reversement |
+| [**Rapports**](/dashboard/rapports) | Rapports mensuels PDF |
+| [**Développeur**](/dashboard/developpeur) | Clés API, URL de webhook, IPs autorisées |
+
+## La vue d'ensemble
+
+### Compteurs
+
+Quatre cartes résument l'ensemble de votre activité depuis la création du compte :
+
+- **Transactions totales** — tous statuts confondus
+- **Réussies** — paiements `SUCCESS`
+- **En attente** — liens `PENDING` non encore payés (ils expirent après 24 h)
+- **Échouées** — paiements `FAILED`
+
+<Info>
+Ces chiffres correspondent à l'endpoint [`GET /web-merchant/merchants-transactions-count`](/api-reference/solde/transactions-count). Les compteurs du mois en cours sont disponibles via [`merchants-monthly-transactions-count`](/api-reference/solde/monthly-transactions-count).
+</Info>
+
+### Volume du mois
+
+Le volume encaissé (somme des paiements `SUCCESS`), le nombre de transactions et le **taux de conversion** (part des paiements réussis) du mois en cours. API : [`GET /web-merchant/merchants-transactions-flow`](/api-reference/solde/transactions-flow).
+
+### Transactions récentes
+
+Les 10 dernières collectes, avec référence, montant, opérateur, statut et date. Cliquez sur **Transactions** pour la liste complète et les filtres.
+
+## Solde
+
+Votre solde disponible (paiements réussis, nets de frais, moins les reversements effectués) s'affiche dans l'onglet **Remboursements**. API : [`GET /web-merchant/get-balance`](/api-reference/solde/get-balance).

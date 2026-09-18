@@ -1,0 +1,154 @@
+---
+title: "Créer un lien de paiement"
+description: "Intégrer le paiement par redirection dans un site e-commerce ou une application."
+icon: "link"
+---
+
+Le lien de paiement est le mode d'intégration le plus simple : vous créez le lien côté serveur, redirigez le client, et attendez le webhook.
+
+## Paramètres
+
+| Champ | Requis | Description |
+|---|---|---|
+| `amount` | Oui | Montant en FCFA, entier **> 100** |
+| `merchant_reference` | Oui | Votre référence marchand |
+| `return_url` | Oui | URL de retour après succès |
+| `cancel_url` | Oui | URL de retour après échec ou annulation |
+| `isQrCode` | Non | `true` pour recevoir un QR code au lieu d'une URL (voir [QR code](/guides/qr-code)) |
+| `metadata.order_id` | Non | Identifiant de votre commande — **fortement recommandé** |
+| `metadata.email` | Non | Email du client |
+| `metadata.phoneNumber` | Non | Numéro du client |
+
+<Tip>
+Renseignez toujours `metadata.order_id`. Il vous revient dans le webhook et devient la « référence marchand » du paiement dans le dashboard, les exports et les rapports.
+</Tip>
+
+## Exemple complet — Express.js
+
+```javascript
+import express from "express";
+
+const app = express();
+app.use(express.json());
+
+const DJONANKO_API = "https://apidjonanko.tech";
+
+app.post("/checkout", async (req, res) => {
+  const order = await createOrder(req.body); // votre logique métier
+
+  const response = await fetch(`${DJONANKO_API}/web-merchant/create-web-payment-link`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": process.env.DJONANKO_API_KEY,
+      "x-api-secret": process.env.DJONANKO_API_SECRET,
+    },
+    body: JSON.stringify({
+      amount: order.total,
+      merchant_reference: process.env.DJONANKO_MERCHANT_REFERENCE,
+      return_url: `https://example.com/orders/${order.id}/success`,
+      cancel_url: `https://example.com/orders/${order.id}/cancel`,
+      metadata: {
+        order_id: order.id,
+        email: order.customerEmail,
+        phoneNumber: order.customerPhone,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    console.error("Djonanko error", error);
+    return res.status(502).json({ error: "Paiement indisponible" });
+  }
+
+  const { paymentLink } = await response.json();
+
+  // Conservez la référence AVANT de rediriger
+  await savePaymentReference(order.id, paymentLink.reference);
+
+  res.redirect(303, paymentLink.paymentUrl);
+});
+```
+
+## Exemple — Laravel
+
+```php
+use Illuminate\Support\Facades\Http;
+
+public function checkout(Request $request)
+{
+    $order = Order::create($request->validated());
+
+    $response = Http::withHeaders([
+        'x-api-key'    => config('services.djonanko.key'),
+        'x-api-secret' => config('services.djonanko.secret'),
+    ])->post('https://apidjonanko.tech/web-merchant/create-web-payment-link', [
+        'amount'             => $order->total,
+        'merchant_reference' => config('services.djonanko.reference'),
+        'return_url'         => route('orders.success', $order),
+        'cancel_url'         => route('orders.cancel', $order),
+        'metadata'           => [
+            'order_id'    => (string) $order->id,
+            'email'       => $order->customer_email,
+            'phoneNumber' => $order->customer_phone,
+        ],
+    ]);
+
+    $response->throw();
+
+    $order->update(['payment_reference' => $response['paymentLink']['reference']]);
+
+    return redirect()->away($response['paymentLink']['paymentUrl']);
+}
+```
+
+## Exemple — Django
+
+```python
+import os
+import requests
+from django.shortcuts import redirect
+
+def checkout(request):
+    order = create_order(request)
+
+    response = requests.post(
+        "https://apidjonanko.tech/web-merchant/create-web-payment-link",
+        headers={
+            "x-api-key": os.environ["DJONANKO_API_KEY"],
+            "x-api-secret": os.environ["DJONANKO_API_SECRET"],
+        },
+        json={
+            "amount": order.total,
+            "merchant_reference": os.environ["DJONANKO_MERCHANT_REFERENCE"],
+            "return_url": request.build_absolute_uri(f"/orders/{order.id}/success"),
+            "cancel_url": request.build_absolute_uri(f"/orders/{order.id}/cancel"),
+            "metadata": {"order_id": str(order.id), "email": order.email},
+        },
+        timeout=15,
+    )
+    response.raise_for_status()
+    link = response.json()["paymentLink"]
+
+    order.payment_reference = link["reference"]
+    order.save()
+
+    return redirect(link["paymentUrl"])
+```
+
+## Idempotence
+
+L'API ne déduplique pas les liens : deux appels créent deux liens. Pour éviter de facturer deux fois un client qui rafraîchit la page :
+
+1. stockez la `reference` sur la commande dès le premier appel ;
+2. si une référence existe déjà et que le paiement est encore `PENDING` (vérifiez avec [`GET /payment/status`](/api-reference/paiements/payment-status)), redirigez vers `https://checkout.djonanko.ci/{reference}` sans recréer de lien.
+
+## Que se passe-t-il au retour ?
+
+- `return_url` : le client a validé le paiement. **Affichez une page d'attente** tant que votre webhook n'a pas confirmé `SUCCESS` — la redirection seule n'est pas une preuve.
+- `cancel_url` : le client a annulé ou l'opérateur a refusé. Proposez de réessayer avec un nouveau lien.
+
+<Card title="Étape suivante : recevoir les webhooks" icon="bell" href="/guides/webhooks">
+  Configurez l'URL de notification et traitez les événements `SUCCESS` / `FAILED`.
+</Card>

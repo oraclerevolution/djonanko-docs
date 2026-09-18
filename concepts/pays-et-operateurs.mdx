@@ -1,0 +1,56 @@
+---
+title: "Pays et opérateurs"
+description: "Les pays couverts, les opérateurs disponibles et les valeurs renvoyées par l'API."
+icon: "globe"
+---
+
+## Couverture
+
+| Pays | Code | Devise | Opérateurs |
+|---|---|---|---|
+| Côte d'Ivoire | `CI` | XOF | Orange Money, MTN MoMo, Moov Money, Wave |
+| Burkina Faso | `BF` | XOF | Orange Money, Moov Money |
+| Mali | `ML` | XOF | Orange Money, Moov Money |
+| Cameroun | `CM` | XAF | Orange Money, MTN MoMo |
+
+Le paiement par **carte Visa** est également proposé sur la page de paiement.
+
+<Note>
+Le pays d'un paiement est celui de **votre compte marchand** (`country` à l'inscription). La page de paiement propose les opérateurs de ce pays.
+</Note>
+
+## Valeurs renvoyées par l'API
+
+Le champ `senderOperateur` (liste des paiements) et `provider` (webhook) indiquent l'opérateur utilisé par le client. **La casse varie selon l'agrégateur** ; comparez toujours en minuscules.
+
+| Opérateur | Valeurs possibles | Clé de filtre (`operator`) |
+|---|---|---|
+| Orange Money | `Orange`, `orange`, `ORANGE` | `orange` |
+| MTN MoMo | `Mtn`, `MTN`, `mtn` | `mtn` |
+| Moov Money | `Moov`, `MOOV`, `moov` | `moov` |
+| Wave | `Wave`, `WAVE`, `wave` | `wave` |
+| Visa | `Visa`, `VISA`, `visa` | `visa` |
+
+```javascript
+// Normalisation recommandée
+const operator = (payment.senderOperateur ?? "").toLowerCase();
+if (operator.includes("wave")) { /* … */ }
+```
+
+## Comptes de reversement
+
+Pour recevoir vos fonds, les types de compte acceptés sont :
+
+| Type | Valeur `type` | Champs requis |
+|---|---|---|
+| Orange Money | `orange` | `phoneNumber`, `country` |
+| Moov Money | `moov` | `phoneNumber`, `country` |
+| MTN MoMo | `mtn` | `phoneNumber`, `country` |
+| Wave | `wave` | `phoneNumber`, `country` |
+| Virement bancaire | `bank` | `beneficiaryName`, `bankId`, `branchCode`, `accountNumber`, `ribKey`, `swiftCode` |
+
+La liste des banques acceptées est disponible via [`GET /banks/active`](/api-reference/reversements/list-banks).
+
+## Format des numéros
+
+Utilisez le **format international** avec l'indicatif (`+225…`, `+226…`, `+223…`, `+237…`). Les numéros sans indicatif sont acceptés pour le pays du compte, mais le format international évite toute ambiguïté.

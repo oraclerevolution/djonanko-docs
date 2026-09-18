@@ -1,0 +1,223 @@
+---
+title: "Webhooks"
+description: "Recevoir les notifications de paiement, les traiter de façon fiable et surveiller les échecs."
+icon: "bell"
+---
+
+Dès qu'un paiement aboutit ou échoue, Djonanko envoie une requête `POST` sur l'URL de webhook de votre compte. C'est **le canal principal** pour mettre à jour vos commandes.
+
+## Configurer l'URL
+
+<Tabs>
+  <Tab title="Dashboard">
+    Onglet **Développeur → Configuration des URLs**, champ *URL Webhook*, puis **Enregistrer**.
+  </Tab>
+  <Tab title="API">
+    ```bash
+    curl -X PATCH https://apidjonanko.tech/web-merchant/set-webhook-url \
+      -H "Content-Type: application/json" \
+      -H "authenticationtoken: $DJONANKO_TOKEN" \
+      -d '{ "reference": "beautyshop", "webhookUrl": "https://example.com/webhooks/djonanko" }'
+    ```
+  </Tab>
+</Tabs>
+
+Contraintes :
+
+- **HTTPS** avec un certificat valide.
+- **Pas d'authentification** (pas de Basic Auth, pas de jeton) : Djonanko n'en envoie aucune. Sécurisez la réception autrement (voir plus bas).
+- Réponse **`2xx` en moins de 15 secondes**. Traitez en asynchrone si nécessaire.
+
+## Le payload
+
+```json
+{
+  "status": "SUCCESS",
+  "amount": 5000,
+  "fees": 100,
+  "reference": "PAYR9PVUYEWVF",
+  "provider": "Wave",
+  "country_code": "CI",
+  "metadata": {
+    "order_id": "CMD-2026-00042",
+    "email": "client@example.com",
+    "phoneNumber": "+2250700000000"
+  },
+  "created_date": "2026-09-18T08:00:00.000Z"
+}
+```
+
+| Champ | Type | Description |
+|---|---|---|
+| `status` | `SUCCESS` \| `FAILED` | Résultat du paiement |
+| `amount` | integer | Montant payé, en FCFA |
+| `fees` | number | Frais prélevés — **uniquement si `SUCCESS`** |
+| `reference` | string | Référence `PAY…` du paiement |
+| `provider` | string | Opérateur utilisé (`Orange`, `Wave`, `Mtn`, `Moov`, `Visa` — casse variable) |
+| `country_code` | string | Pays du paiement |
+| `metadata` | object | Les métadonnées transmises à la création, à l'identique |
+| `created_date` | date-time | Date de création du lien |
+
+En-têtes envoyés : `Content-Type: application/json` et `User-Agent: Djonanko-Webhook/1.0`.
+
+<Warning>
+Le webhook **n'est pas signé**. N'accordez pas de confiance au contenu reçu : utilisez-le comme un signal, puis **confirmez** le statut avec [`GET /web-merchant/payment/status`](/api-reference/paiements/payment-status) avant de livrer.
+</Warning>
+
+## Recevoir le webhook
+
+<CodeGroup>
+```javascript Express.js
+app.post("/webhooks/djonanko", express.json(), async (req, res) => {
+  const event = req.body;
+
+  // 1. Répondre vite : on accuse réception avant tout traitement lourd
+  res.sendStatus(200);
+
+  try {
+    // 2. Retrouver la commande
+    const order = await findOrderByPaymentReference(event.reference);
+    if (!order) return console.warn("Webhook pour une référence inconnue", event.reference);
+
+    // 3. Idempotence : un webhook peut être rejoué
+    if (order.status === "PAID") return;
+
+    // 4. Confirmer côté Djonanko avant d'agir
+    const { status } = await getPaymentStatus(event.reference);
+
+    if (status === "SUCCESS") {
+      await markOrderPaid(order.id, { fees: event.fees, provider: event.provider });
+      await fulfillOrder(order.id);
+    } else if (status === "FAILED") {
+      await markOrderFailed(order.id);
+    }
+  } catch (err) {
+    console.error("Erreur traitement webhook", err);
+  }
+});
+```
+
+```php Laravel
+// routes/api.php
+Route::post('/webhooks/djonanko', [DjonankoWebhookController::class, 'handle'])
+    ->withoutMiddleware([VerifyCsrfToken::class]);
+
+// app/Http/Controllers/DjonankoWebhookController.php
+public function handle(Request $request)
+{
+    $event = $request->all();
+
+    // Traitement différé : la réponse 200 part immédiatement
+    ProcessDjonankoPayment::dispatch($event['reference'], $event);
+
+    return response()->noContent(200);
+}
+
+// app/Jobs/ProcessDjonankoPayment.php
+public function handle(DjonankoClient $djonanko)
+{
+    $order = Order::where('payment_reference', $this->reference)->first();
+    if (!$order || $order->status === 'paid') return;
+
+    $status = $djonanko->paymentStatus($this->reference)['status'];
+
+    if ($status === 'SUCCESS') {
+        $order->markAsPaid($this->event['fees'] ?? 0);
+    } elseif ($status === 'FAILED') {
+        $order->markAsFailed();
+    }
+}
+```
+
+```python Django
+import json
+from django.http import HttpResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
+
+@csrf_exempt
+@require_POST
+def djonanko_webhook(request):
+    event = json.loads(request.body)
+
+    # Traitement asynchrone (Celery, RQ, …)
+    process_djonanko_payment.delay(event["reference"], event)
+
+    return HttpResponse(status=200)
+
+
+@shared_task
+def process_djonanko_payment(reference, event):
+    order = Order.objects.filter(payment_reference=reference).first()
+    if not order or order.status == "paid":
+        return
+
+    status = djonanko.payment_status(reference)["status"]
+    if status == "SUCCESS":
+        order.mark_paid(fees=event.get("fees", 0))
+    elif status == "FAILED":
+        order.mark_failed()
+```
+</CodeGroup>
+
+## Sécuriser la réception
+
+Puisque le webhook n'est ni signé ni authentifié, appliquez ces trois règles :
+
+1. **Vérifiez** le statut via l'API avant toute action irréversible (livraison, activation de service, remboursement).
+2. **Soyez idempotent** : un même paiement peut être notifié plusieurs fois (rejeu automatique, rejeu manuel). Utilisez `reference` comme clé unique.
+3. **Utilisez un chemin non devinable** pour votre URL, par exemple `/webhooks/djonanko/8f3a…`, afin de limiter les appels parasites.
+
+## Rejeu automatique
+
+Si votre serveur ne répond pas `2xx`, Djonanko réessaie automatiquement :
+
+| Phase | Tentatives | Délai |
+|---|---|---|
+| Immédiate | 3 | 2 s, 4 s, 8 s |
+| Différée | 5 | 5 min → 15 min → 1 h → 6 h → 24 h |
+
+Soit **8 tentatives sur environ 31 heures**. Les réponses `400`, `401`, `404` et `422` sont considérées comme définitives et **ne sont pas rejouées** ; `403`, `5xx`, timeouts et erreurs réseau le sont.
+
+<Info>
+Le `403` est volontairement rejouable : c'est le code renvoyé par **Cloudflare** lorsqu'il bloque le trafic serveur-à-serveur. Voir la section suivante.
+</Info>
+
+## Derrière Cloudflare ou un WAF
+
+Cloudflare (Bot Fight Mode, challenge « Just a moment… ») peut bloquer les webhooks avec un `403`. Pour les laisser passer :
+
+- créez une **WAF Custom Rule** avec l'action *Skip* sur le chemin de votre webhook (ex. `/webhooks/djonanko*`) ;
+- vérifiez que **Bot Fight Mode / Super Bot Fight Mode** n'est pas actif sur ce chemin ;
+- si vous filtrez par User-Agent, autorisez `Djonanko-Webhook/1.0`.
+
+Une fois la règle en place, les livraisons en attente reprennent automatiquement au prochain palier, ou immédiatement via un rejeu manuel.
+
+## Surveiller et rejouer
+
+Le dashboard et l'API exposent les livraisons en échec :
+
+```bash
+# Lister les échecs (FAILED + ABANDONED par défaut)
+curl "https://apidjonanko.tech/web-merchant/webhooks/failed?limit=20" \
+  -H "authenticationtoken: $DJONANKO_TOKEN"
+
+# Rejouer immédiatement une livraison
+curl -X POST "https://apidjonanko.tech/web-merchant/webhooks/<delivery_id>/replay" \
+  -H "authenticationtoken: $DJONANKO_TOKEN"
+```
+
+| Statut | Signification |
+|---|---|
+| `PENDING` | Envoi en cours |
+| `SUCCESS` | Livré (`2xx`) |
+| `FAILED` | Échec temporaire, rejeu programmé (`nextRetryAt`) |
+| `ABANDONED` | Échec définitif : 8 tentatives épuisées ou erreur non rejouable |
+
+Le rejeu manuel remet le compteur à zéro : si l'envoi échoue encore, toute l'échelle de rejeu automatique redevient disponible. Rejouer une livraison déjà `SUCCESS` renvoie `400`.
+
+Référence : [`GET /webhooks/failed`](/api-reference/webhooks/list-failed) · [`POST /webhooks/{id}/replay`](/api-reference/webhooks/replay).
+
+## Tester en local
+
+Exposez votre serveur local avec un tunnel (ngrok, Cloudflare Tunnel), enregistrez l'URL du tunnel comme webhook, puis effectuez un paiement de test de faible montant (≥ 101 FCFA). Vous pouvez aussi simuler la réception en envoyant vous-même le payload ci-dessus avec `curl`.

@@ -1,0 +1,101 @@
+---
+title: "Whitelisting IP"
+description: "Déclarer les adresses IP de vos serveurs — obligatoire à partir du 25 septembre 2026."
+icon: "network-wired"
+---
+
+<Warning>
+**À partir du 25 septembre 2026**, seules les requêtes provenant d'une adresse IP déclarée dans votre compte seront acceptées par l'API. Un compte **sans aucune IP enregistrée sera refusé**. Déclarez vos serveurs dès maintenant.
+</Warning>
+
+## Pourquoi
+
+Vos clés API donnent accès à la création de paiements. Restreindre leur usage à vos serveurs limite l'impact d'une fuite de clé : même volée, elle ne fonctionne pas depuis une autre machine.
+
+## Déclarer une IP
+
+<Tabs>
+  <Tab title="Dashboard">
+    Onglet **Développeur → Adresses IP autorisées**. Saisissez l'IP ou la plage et un libellé (ex. « Serveur de production »), puis **Ajouter**. Un compte à rebours indique la date d'application.
+  </Tab>
+  <Tab title="API">
+    ```bash
+    curl -X POST https://apidjonanko.tech/web-merchant/allowed-ips \
+      -H "Content-Type: application/json" \
+      -H "authenticationtoken: $DJONANKO_TOKEN" \
+      -d '{
+        "merchant_reference": "beautyshop",
+        "ipAddress": "41.207.12.34",
+        "label": "Serveur de production"
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+Formats acceptés :
+
+| Format | Exemple |
+|---|---|
+| IPv4 | `41.207.12.34` |
+| IPv6 | `2001:db8::1` |
+| Plage CIDR IPv4 | `41.207.12.0/24` |
+| Plage CIDR IPv6 | `2001:db8::/64` |
+
+Limite : **20 entrées** par compte. Utilisez des plages CIDR pour regrouper plusieurs serveurs.
+
+## Trouver l'IP sortante de vos serveurs
+
+L'IP à déclarer est l'**IP publique sortante**, celle vue par Djonanko — pas l'IP privée ni celle de votre nom de domaine.
+
+```bash
+# Depuis le serveur concerné
+curl -s https://api.ipify.org
+```
+
+<AccordionGroup>
+  <Accordion title="Hébergement cloud (AWS, GCP, Azure, OVH…)">
+    Attribuez une IP statique (Elastic IP, IP réservée) ou faites passer le trafic sortant par une NAT Gateway à IP fixe. Sans cela, l'IP peut changer au redéploiement.
+  </Accordion>
+  <Accordion title="Plateformes managées (Railway, Render, Vercel, Heroku…)">
+    L'IP sortante est souvent partagée et variable. Consultez la documentation de votre plateforme : la plupart proposent une option d'IP statique ou publient leurs plages d'IP sortantes, que vous pouvez déclarer en CIDR.
+  </Accordion>
+  <Accordion title="Fonctions serverless (Lambda, Cloud Functions…)">
+    Placez la fonction dans un VPC avec NAT Gateway pour obtenir une IP fixe, ou appelez l'API Djonanko depuis un service intermédiaire à IP stable.
+  </Accordion>
+</AccordionGroup>
+
+## Vérifier votre configuration
+
+```bash
+curl "https://apidjonanko.tech/web-merchant/allowed-ips?merchant_reference=beautyshop" \
+  -H "authenticationtoken: $DJONANKO_TOKEN"
+```
+
+```json
+{
+  "enforcementDate": "2026-09-25T00:00:00.000Z",
+  "enforced": false,
+  "maxIps": 20,
+  "ips": [
+    {
+      "id": "…",
+      "ipAddress": "41.207.12.34",
+      "label": "Serveur de production",
+      "createdAt": "2026-09-18T09:00:00.000Z"
+    }
+  ]
+}
+```
+
+`enforced` passe à `true` une fois la restriction active.
+
+## Retirer une IP
+
+```bash
+curl -X DELETE "https://apidjonanko.tech/web-merchant/allowed-ips/<id>?merchant_reference=beautyshop" \
+  -H "authenticationtoken: $DJONANKO_TOKEN"
+```
+
+<Tip>
+Déclarez vos environnements de **préproduction** aussi : ils utilisent les mêmes clés et seront bloqués de la même façon.
+</Tip>

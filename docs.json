@@ -1,0 +1,211 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Djonanko Pay",
+  "description": "Documentation développeur de Djonanko Pay — la passerelle de paiement mobile money pour l'Afrique de l'Ouest et du Centre.",
+  "colors": {
+    "primary": "#0B4530",
+    "light": "#2E9E6C",
+    "dark": "#0B4530"
+  },
+  "logo": {
+    "light": "/logo/logo.png",
+    "dark": "/logo/logo.png",
+    "href": "https://djonanko.ci"
+  },
+  "favicon": "/favicon.ico",
+  "background": {
+    "decoration": "gradient"
+  },
+  "fonts": {
+    "family": "Inter"
+  },
+  "appearance": {
+    "default": "system"
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "Dashboard marchand",
+        "href": "https://pay.djonanko.tech/login"
+      },
+      {
+        "label": "Support",
+        "href": "https://www.djonanko.ci/#contact"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Créer un compte",
+      "href": "https://pay.djonanko.tech/#register"
+    }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "icon": "book-open",
+        "groups": [
+          {
+            "group": "Premiers pas",
+            "pages": [
+              "introduction",
+              "demarrage-rapide",
+              "concepts/authentification",
+              "concepts/flux-de-paiement",
+              "concepts/pays-et-operateurs",
+              "concepts/erreurs"
+            ]
+          },
+          {
+            "group": "Guides d'intégration",
+            "pages": [
+              "guides/lien-de-paiement",
+              "guides/qr-code",
+              "guides/verifier-un-paiement",
+              "guides/webhooks",
+              "guides/reversements",
+              "guides/ip-whitelisting",
+              "guides/rotation-des-cles",
+              "guides/postman",
+              "guides/mise-en-production"
+            ]
+          },
+          {
+            "group": "Dashboard marchand",
+            "pages": [
+              "dashboard/apercu",
+              "dashboard/transactions",
+              "dashboard/remboursements",
+              "dashboard/gestion-des-comptes",
+              "dashboard/rapports",
+              "dashboard/developpeur"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Référence API",
+        "icon": "code",
+        "openapi": "openapi.yaml",
+        "groups": [
+          {
+            "group": "Introduction",
+            "pages": [
+              "api-reference/introduction",
+              "api-reference/playground"
+            ]
+          },
+          {
+            "group": "Authentification",
+            "pages": [
+              "api-reference/auth/login-merchant",
+              "api-reference/auth/regenerate-api-key"
+            ]
+          },
+          {
+            "group": "Paiements",
+            "pages": [
+              "api-reference/paiements/create-web-payment-link",
+              "api-reference/paiements/payment-status",
+              "api-reference/paiements/list-payments",
+              "api-reference/paiements/search-payments",
+              "api-reference/paiements/export-payments"
+            ]
+          },
+          {
+            "group": "Solde & statistiques",
+            "pages": [
+              "api-reference/solde/get-balance",
+              "api-reference/solde/transactions-count",
+              "api-reference/solde/monthly-transactions-count",
+              "api-reference/solde/transactions-flow"
+            ]
+          },
+          {
+            "group": "Webhooks",
+            "pages": [
+              "api-reference/webhooks/payment-notification",
+              "api-reference/webhooks/set-webhook-url",
+              "api-reference/webhooks/list-failed",
+              "api-reference/webhooks/replay"
+            ]
+          },
+          {
+            "group": "Reversements",
+            "pages": [
+              "api-reference/reversements/request-disbursement",
+              "api-reference/reversements/list-disbursements",
+              "api-reference/reversements/refunds-stats",
+              "api-reference/reversements/list-payout-accounts",
+              "api-reference/reversements/create-payout-account",
+              "api-reference/reversements/set-primary-payout-account",
+              "api-reference/reversements/delete-payout-account",
+              "api-reference/reversements/list-banks"
+            ]
+          },
+          {
+            "group": "Sécurité — IPs autorisées",
+            "pages": [
+              "api-reference/securite/list-allowed-ips",
+              "api-reference/securite/create-allowed-ip",
+              "api-reference/securite/delete-allowed-ip"
+            ]
+          },
+          {
+            "group": "Rapports mensuels",
+            "pages": [
+              "api-reference/rapports/list-reports",
+              "api-reference/rapports/generate-report",
+              "api-reference/rapports/download-report"
+            ]
+          },
+          {
+            "group": "Compte marchand",
+            "pages": [
+              "api-reference/compte/register",
+              "api-reference/compte/get-merchant"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "api": {
+    "playground": {
+      "display": "interactive",
+      "proxy": false
+    },
+    "examples": {
+      "languages": ["curl", "javascript", "python", "php"],
+      "defaults": "required"
+    }
+  },
+  "footer": {
+    "socials": {
+      "website": "https://djonanko.ci"
+    },
+    "links": [
+      {
+        "header": "Produit",
+        "items": [
+          { "label": "Dashboard marchand", "href": "https://pay.djonanko.tech" },
+          { "label": "Page de paiement", "href": "https://checkout.djonanko.ci" }
+        ]
+      },
+      {
+        "header": "Ressources",
+        "items": [
+          { "label": "Collection Postman", "href": "/DjonankoPay.postman_collection.json" },
+          { "label": "Statut de l'API", "href": "https://apidjonanko.tech" }
+        ]
+      }
+    ]
+  },
+  "seo": {
+    "indexing": "all"
+  },
+  "search": {
+    "prompt": "Rechercher dans la documentation…"
+  }
+}

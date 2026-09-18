@@ -1,0 +1,55 @@
+---
+title: "Transactions"
+description: "Rechercher, filtrer et exporter vos collectes en PDF, Excel ou CSV."
+icon: "credit-card"
+---
+
+L'onglet **Transactions** liste tous les paiements de votre compte, du plus récent au plus ancien.
+
+## Filtres de recherche
+
+| Filtre | Description |
+|---|---|
+| **Date min / Date max** | Période, dates inclusives |
+| **Référence** | Recherche partielle sur la référence `PAY…` **ou** sur votre `order_id` (référence marchand) |
+| **Statut** | `Réussies`, `En attente`, `Échouées` |
+| **Opérateur** | Orange Money, MTN MoMo, Moov Money, Wave, Visa |
+| **Pays** | Côte d'Ivoire, Burkina Faso, Mali, Cameroun |
+
+Les filtres se combinent. Cliquez sur **Afficher** pour lancer la recherche.
+
+<Tip>
+Pour retrouver un paiement à partir d'une commande, tapez le numéro de commande dans **Référence** : la recherche porte aussi sur `metadata.order_id`.
+</Tip>
+
+## Colonnes
+
+| Colonne | Contenu |
+|---|---|
+| Référence | Référence `PAY…` du paiement |
+| Référence marchand | Votre `metadata.order_id` |
+| Montant | En FCFA |
+| Statut | Réussi, En attente, Échoué |
+| Opérateur | Opérateur utilisé par le client |
+| Téléphone client | Numéro mobile money du payeur |
+| Date | Date de création du lien |
+
+Cliquez sur une ligne pour voir les **métadonnées** complètes (`order_id`, `email`, `phoneNumber`).
+
+## Exporter
+
+Le bouton **Exporter** génère un fichier avec **les filtres en cours** :
+
+| Format | Usage |
+|---|---|
+| **Excel** (`.xlsx`) | Rapprochement comptable, tableaux croisés |
+| **CSV** | Import dans un autre outil |
+| **PDF** | Archivage, transmission à un tiers |
+
+Colonnes exportées : Référence, Montant (XOF), Statut, Pays, Opérateur, Téléphone client, Référence marchand, Date.
+
+## Par API
+
+- Liste complète : [`GET /web-merchant/payments`](/api-reference/paiements/list-payments)
+- Recherche filtrée : [`GET /web-merchant/payments/search`](/api-reference/paiements/search-payments)
+- Export : [`GET /web-merchant/payments/export`](/api-reference/paiements/export-payments)

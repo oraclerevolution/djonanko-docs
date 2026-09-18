@@ -1,0 +1,258 @@
+{
+	"info": {
+		"_postman_id": "bf59db8d-4b9a-44e6-a9cc-29cf1a5aae25",
+		"name": "Djonanko Pay",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "6962069",
+		"_collection_link": "https://restless-desert-200513.postman.co/workspace/My-Workspace~25d9ceb0-d540-4305-83d9-f9c08e6ee4bd/collection/6962069-bf59db8d-4b9a-44e6-a9cc-29cf1a5aae25?action=share&source=collection_link&creator=6962069"
+	},
+	"item": [
+		{
+			"name": "transactions",
+			"item": [
+				{
+					"name": "get all payments",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "authenticationtoken",
+								"value": "",
+								"type": "text"
+							},
+							{
+								"key": "",
+								"value": "",
+								"type": "text",
+								"disabled": true
+							}
+						],
+						"url": {
+							"raw": "https://apidjonanko.tech/web-merchant/payments?merchant_reference=beautyshop",
+							"protocol": "https",
+							"host": [
+								"apidjonanko",
+								"tech"
+							],
+							"path": [
+								"web-merchant",
+								"payments"
+							],
+							"query": [
+								{
+									"key": "merchant_reference",
+									"value": "beautyshop"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "get payment status",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "authenticationtoken",
+								"value": "",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "https://apidjonanko.tech/web-merchant/payment/status?payment_reference=PAYR9PVUYEWVF",
+							"protocol": "https",
+							"host": [
+								"apidjonanko",
+								"tech"
+							],
+							"path": [
+								"web-merchant",
+								"payment",
+								"status"
+							],
+							"query": [
+								{
+									"key": "payment_reference",
+									"value": "PAYR9PVUYEWVF"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "initiate a payment",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{API_KEY}}",
+								"type": "text"
+							},
+							{
+								"key": "x-api-secret",
+								"value": "{{API_SECRET}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"amount\": 200,\n    \"merchant_reference\": \"beautyshop\",\n    \"isQrCode\": true, //Si cette valeur est TRUE, vous aurez un QRCode dans le retour de l'API (Il n'est pas obligatoire)\n    \"return_url\": \"https://example.com/success\", //lien de redirection apres un paiement en succès\n    \"cancel_url\": \"https://example.com/cancel\", //lien de redirection apres un paiement en échec\n    \"metadata\": {\n        \"order_id\": \"12345FGGVL\",\n        \"email\": \"customer@email.com\",\n        \"phoneNumber\": \"+2250709483463\"\n    }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "https://apidjonanko.tech/web-merchant/create-web-payment-link",
+							"protocol": "https",
+							"host": [
+								"apidjonanko",
+								"tech"
+							],
+							"path": [
+								"web-merchant",
+								"create-web-payment-link"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "send webhook",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"transaction_id\": \"50f668cf-2a84-41e7-9bcb-6874b0d5d286\",\n  \"status\": \"SUCCESS\",\n  \"amount\": 5000,\n  \"fees\": 100,\n  \"reference\": \"PAY_1234\",\n  \"provider\": \"Wave\",\n  \"country_code\": \"CI\",\n  \"metadata\": {\n    \"order_id\": \"1234\",\n    \"email\": \"Z4t0a@example.com\",\n    \"phoneNumber\": \"1234567890\"\n  },\n  \"createdAt\": \"2025-08-28T08:00:00.000Z\",\n  \"updatedAt\": \"2025-08-28T08:01:00.000Z\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "your.webhook.com/notifications",
+							"host": [
+								"your",
+								"webhook",
+								"com"
+							],
+							"path": [
+								"notifications"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "webhook",
+			"item": [
+				{
+					"name": "set your webhook url",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{API_KEY}}",
+								"type": "text"
+							},
+							{
+								"key": "x-api-secret",
+								"value": "{{API_SECRET}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"reference\": \"beautyshop\",\n    \"webhookUrl\": \"your.webhook.url/notifications\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "https://apidjonanko.tech/web-merchant/set-webhook-url",
+							"protocol": "https",
+							"host": [
+								"apidjonanko",
+								"tech"
+							],
+							"path": [
+								"web-merchant",
+								"set-webhook-url"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "payment webhook",
+					"request": {
+						"method": "GET",
+						"header": []
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "merchant",
+			"item": [
+				{
+					"name": "get balance",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{API_KEY}}",
+								"type": "text"
+							},
+							{
+								"key": "x-api-secret",
+								"value": "{{API_SECRET}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "https://apidjonanko.tech/web-merchant/get-balance?merchant_reference=beautyshop",
+							"protocol": "https",
+							"host": [
+								"apidjonanko",
+								"tech"
+							],
+							"path": [
+								"web-merchant",
+								"get-balance"
+							],
+							"query": [
+								{
+									"key": "merchant_reference",
+									"value": "beautyshop"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "New Request",
+					"request": {
+						"method": "GET",
+						"header": []
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}

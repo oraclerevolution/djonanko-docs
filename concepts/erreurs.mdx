@@ -1,0 +1,94 @@
+---
+title: "Gestion des erreurs"
+description: "Format des erreurs, codes HTTP et messages que vous pouvez rencontrer."
+icon: "triangle-exclamation"
+---
+
+## Format
+
+Toutes les erreurs suivent le même format JSON :
+
+```json
+{
+  "statusCode": 401,
+  "message": "Invalid API credentials",
+  "error": "Unauthorized"
+}
+```
+
+Lorsqu'une validation échoue sur plusieurs champs, `message` est un tableau :
+
+```json
+{
+  "statusCode": 400,
+  "message": [
+    "return_url must be a URL address",
+    "amount should not be empty"
+  ],
+  "error": "Bad Request"
+}
+```
+
+## Codes HTTP
+
+| Code | Signification | Que faire |
+|---|---|---|
+| `200` / `201` | Succès | — |
+| `302` | Redirection (téléchargement de rapport) | Suivre l'en-tête `Location` |
+| `400` | Requête invalide | Corriger les paramètres, ne pas réessayer à l'identique |
+| `401` | Identifiants manquants ou invalides | Vérifier les en-têtes ; renouveler le jeton marchand s'il a expiré |
+| `403` | Compte marchand non actif | Contacter Djonanko pour l'activation |
+| `404` | Ressource introuvable | Vérifier la référence (marchand, paiement, compte…) |
+| `409` | Conflit | Vérifier l'état de la ressource |
+| `500` | Erreur serveur | Réessayer avec un délai ; contacter le support si persistant |
+
+## Messages fréquents
+
+<AccordionGroup>
+  <Accordion title="401 — API credentials are required">
+    Les en-têtes `x-api-key` et/ou `x-api-secret` sont absents. Vérifiez que votre client HTTP les envoie bien (certains proxies les suppriment).
+  </Accordion>
+  <Accordion title="401 — Invalid API credentials">
+    Le secret ne correspond pas à la clé. Si vous avez régénéré le secret, l'ancien est invalidé immédiatement : mettez à jour votre configuration.
+  </Accordion>
+  <Accordion title="401 — Unauthorized (jeton marchand)">
+    Le JWT `authenticationtoken` est absent, expiré ou invalide. Reconnectez-vous via `POST /user/login-merchant`.
+  </Accordion>
+  <Accordion title="400 — Amount must be greater than 100">
+    Le montant minimum d'un paiement est de **101 FCFA**.
+  </Accordion>
+  <Accordion title="403 — Merchant account is not active">
+    Votre compte n'a pas encore été activé par Djonanko, ou a été désactivé. Contactez le support.
+  </Accordion>
+  <Accordion title="404 — Merchant not found">
+    Le `merchant_reference` (ou `reference`) ne correspond à aucun compte. Vérifiez la casse : la référence est sensible à la casse.
+  </Accordion>
+  <Accordion title="404 — Payment not found">
+    La `payment_reference` ne correspond à aucun paiement. Vérifiez que vous utilisez bien la référence `PAY…` renvoyée à la création, et non l'`id` UUID.
+  </Accordion>
+  <Accordion title="400 — Solde insuffisant : votre solde disponible est de X FCFA">
+    Le montant du reversement demandé dépasse votre solde. Consultez `GET /web-merchant/get-balance`.
+  </Accordion>
+  <Accordion title="400 — Le montant minimum est de 500 FCFA">
+    Un reversement doit être d'au moins 500 FCFA.
+  </Accordion>
+  <Accordion title="400 — Aucun moyen principal de reversement n'est enregistré">
+    Ajoutez un compte de reversement et définissez-le comme principal, ou fournissez `destination` et `operator` dans la demande.
+  </Accordion>
+  <Accordion title="400 — Cette adresse IP est déjà enregistrée">
+    L'IP (ou la plage CIDR normalisée) existe déjà dans votre liste.
+  </Accordion>
+  <Accordion title="400 — Vous ne pouvez pas enregistrer plus de 20 adresses IP">
+    Supprimez une entrée inutilisée, ou regroupez vos serveurs dans une plage CIDR.
+  </Accordion>
+  <Accordion title="400 — Le rapport d'un mois n'est disponible qu'une fois le mois terminé">
+    Les rapports mensuels ne peuvent être générés que pour un mois écoulé.
+  </Accordion>
+</AccordionGroup>
+
+## Bonnes pratiques
+
+- **Journalisez** le corps complet de chaque erreur avec la requête qui l'a provoquée.
+- **Ne réessayez pas** automatiquement une `400` ou `404` : l'appel échouera de la même façon.
+- **Réessayez avec backoff** les `500` et les erreurs réseau, en gardant la même `metadata.order_id` pour éviter de créer deux liens pour une même commande.
+- Avant de conclure qu'un paiement a échoué, **vérifiez son statut** avec `GET /web-merchant/payment/status` : un lien peut être `PENDING` alors que votre appel de création a expiré côté réseau.

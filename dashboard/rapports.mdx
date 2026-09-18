@@ -1,0 +1,36 @@
+---
+title: "Rapports mensuels"
+description: "Un récapitulatif PDF de votre activité, généré automatiquement chaque mois."
+icon: "file-lines"
+---
+
+Chaque début de mois, Djonanko génère un **rapport PDF** du mois écoulé pour votre compte. L'onglet **Rapports** les liste, du plus récent au plus ancien.
+
+## Contenu d'un rapport
+
+| Colonne | Description |
+|---|---|
+| **Période** | Mois couvert (ex. Août 2026) |
+| **Collectes** | Nombre de paiements réussis |
+| **Encaissé** | Montant total encaissé (FCFA) |
+| **Reversements** | Montant reversé sur la période |
+| **Généré le** | Date de génération |
+| **Statut** | Disponible, Non généré, ou Échec |
+
+Le PDF détaille les collectes, la répartition par opérateur et par pays, et les reversements du mois.
+
+## Actions
+
+- **Télécharger** — ouvre le PDF.
+- **Générer** — pour un mois écoulé sans rapport (compte créé récemment, ou génération automatique en échec).
+- **Regénérer** — reconstruit le rapport d'un mois passé, par exemple après la régularisation d'un reversement.
+
+<Note>
+Le rapport du **mois en cours** n'est pas disponible : il ne peut être généré qu'une fois le mois terminé.
+</Note>
+
+## Par API
+
+- [`GET /web-merchant/reports`](/api-reference/rapports/list-reports)
+- [`POST /web-merchant/reports/generate`](/api-reference/rapports/generate-report)
+- [`GET /web-merchant/reports/{id}/download`](/api-reference/rapports/download-report)

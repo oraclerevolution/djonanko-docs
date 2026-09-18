@@ -1,0 +1,198 @@
+---
+title: "Démarrage rapide"
+description: "De la création du compte au premier paiement encaissé, en 5 étapes."
+icon: "rocket"
+---
+
+<Steps>
+  <Step title="Créez votre compte marchand">
+    Inscrivez-vous sur le [site Djonanko Pay](https://pay.djonanko.tech/#register) avec le nom de votre entreprise, un email, un numéro de téléphone et une **référence marchand** (un seul mot, ex. `beautyshop`).
+
+    Vous recevez **par SMS** :
+    - votre `API Key` (préfixe `DJN-`) et votre `API Secret`
+    - votre référence marchand
+    - vos identifiants de connexion au dashboard (numéro + mot de passe)
+
+    <Warning>
+    Le **secret API n'est communiqué qu'une seule fois**. Stockez-le immédiatement dans un gestionnaire de secrets. En cas de perte, [régénérez-le](/guides/rotation-des-cles) depuis le dashboard.
+    </Warning>
+
+    Votre compte doit ensuite être **activé par l'équipe Djonanko** avant de pouvoir encaisser. Tant qu'il ne l'est pas, la création de lien renvoie `403 Merchant account is not active`.
+  </Step>
+
+  <Step title="Configurez votre URL de webhook">
+    Dans le dashboard, onglet **Développeur → Configuration des URLs**, renseignez l'URL HTTPS de votre serveur qui recevra les notifications de paiement. Elle ne doit pas être protégée par une authentification.
+
+    Vous pouvez aussi le faire par API avec [`PATCH /web-merchant/set-webhook-url`](/api-reference/webhooks/set-webhook-url).
+  </Step>
+
+  <Step title="Créez un lien de paiement">
+    Depuis votre serveur, appelez l'endpoint de création avec vos clés :
+
+    <CodeGroup>
+    ```bash cURL
+    curl -X POST https://apidjonanko.tech/web-merchant/create-web-payment-link \
+      -H "Content-Type: application/json" \
+      -H "x-api-key: $DJONANKO_API_KEY" \
+      -H "x-api-secret: $DJONANKO_API_SECRET" \
+      -d '{
+        "amount": 5000,
+        "merchant_reference": "beautyshop",
+        "return_url": "https://example.com/success",
+        "cancel_url": "https://example.com/cancel",
+        "metadata": {
+          "order_id": "CMD-2026-00042",
+          "email": "client@example.com",
+          "phoneNumber": "+2250700000000"
+        }
+      }'
+    ```
+
+    ```javascript Node.js
+    const response = await fetch(
+      "https://apidjonanko.tech/web-merchant/create-web-payment-link",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": process.env.DJONANKO_API_KEY,
+          "x-api-secret": process.env.DJONANKO_API_SECRET,
+        },
+        body: JSON.stringify({
+          amount: 5000,
+          merchant_reference: "beautyshop",
+          return_url: "https://example.com/success",
+          cancel_url: "https://example.com/cancel",
+          metadata: {
+            order_id: "CMD-2026-00042",
+            email: "client@example.com",
+            phoneNumber: "+2250700000000",
+          },
+        }),
+      }
+    );
+
+    const { paymentLink } = await response.json();
+    // Redirigez le client vers paymentLink.paymentUrl
+    // et conservez paymentLink.reference avec la commande.
+    ```
+
+    ```python Python
+    import os
+    import requests
+
+    response = requests.post(
+        "https://apidjonanko.tech/web-merchant/create-web-payment-link",
+        headers={
+            "x-api-key": os.environ["DJONANKO_API_KEY"],
+            "x-api-secret": os.environ["DJONANKO_API_SECRET"],
+        },
+        json={
+            "amount": 5000,
+            "merchant_reference": "beautyshop",
+            "return_url": "https://example.com/success",
+            "cancel_url": "https://example.com/cancel",
+            "metadata": {
+                "order_id": "CMD-2026-00042",
+                "email": "client@example.com",
+                "phoneNumber": "+2250700000000",
+            },
+        },
+    )
+    payment_link = response.json()["paymentLink"]
+    # Redirigez le client vers payment_link["paymentUrl"]
+    ```
+
+    ```php PHP
+    <?php
+    $ch = curl_init("https://apidjonanko.tech/web-merchant/create-web-payment-link");
+    curl_setopt_array($ch, [
+      CURLOPT_RETURNTRANSFER => true,
+      CURLOPT_POST => true,
+      CURLOPT_HTTPHEADER => [
+        "Content-Type: application/json",
+        "x-api-key: " . getenv("DJONANKO_API_KEY"),
+        "x-api-secret: " . getenv("DJONANKO_API_SECRET"),
+      ],
+      CURLOPT_POSTFIELDS => json_encode([
+        "amount" => 5000,
+        "merchant_reference" => "beautyshop",
+        "return_url" => "https://example.com/success",
+        "cancel_url" => "https://example.com/cancel",
+        "metadata" => [
+          "order_id" => "CMD-2026-00042",
+          "email" => "client@example.com",
+          "phoneNumber" => "+2250700000000",
+        ],
+      ]),
+    ]);
+    $result = json_decode(curl_exec($ch), true);
+    curl_close($ch);
+
+    $paymentUrl = $result["paymentLink"]["paymentUrl"];
+    $reference  = $result["paymentLink"]["reference"];
+    ```
+    </CodeGroup>
+
+    Réponse :
+
+    ```json
+    {
+      "success": true,
+      "paymentLink": {
+        "id": "50f668cf-2a84-41e7-9bcb-6874b0d5d286",
+        "message": "Payment link created successfully",
+        "paymentUrl": "https://checkout.djonanko.ci/PAYR9PVUYEWVF",
+        "reference": "PAYR9PVUYEWVF"
+      }
+    }
+    ```
+
+    <Tip>
+    Enregistrez `reference` avec votre commande **avant** de rediriger le client : c'est la clé qui vous permettra de rapprocher le webhook et d'interroger le statut.
+    </Tip>
+  </Step>
+
+  <Step title="Redirigez votre client">
+    Envoyez le client vers `paymentUrl`. Il choisit son opérateur, saisit son numéro, valide sur son téléphone, puis est redirigé vers votre `return_url` (succès) ou `cancel_url` (échec).
+
+    Le lien reste valable **24 heures**.
+  </Step>
+
+  <Step title="Traitez la notification">
+    Dès que l'opérateur confirme, Djonanko envoie un `POST` sur votre webhook :
+
+    ```json
+    {
+      "status": "SUCCESS",
+      "amount": 5000,
+      "fees": 100,
+      "reference": "PAYR9PVUYEWVF",
+      "provider": "Wave",
+      "country_code": "CI",
+      "metadata": {
+        "order_id": "CMD-2026-00042",
+        "email": "client@example.com",
+        "phoneNumber": "+2250700000000"
+      },
+      "created_date": "2026-09-18T08:00:00.000Z"
+    }
+    ```
+
+    Retrouvez votre commande grâce à `reference` (ou `metadata.order_id`), marquez-la payée, et répondez `200`. Pour aller plus loin : [guide des webhooks](/guides/webhooks).
+  </Step>
+</Steps>
+
+## Et ensuite ?
+
+<CardGroup cols={3}>
+  <Card title="Sécuriser vos webhooks" icon="shield-check" href="/guides/webhooks#securiser-la-reception">
+    Idempotence et confirmation du statut côté serveur.
+  </Card>
+  <Card title="Déclarer vos IPs" icon="network-wired" href="/guides/ip-whitelisting">
+    Obligatoire à partir du 25 septembre 2026.
+  </Card>
+  <Card title="Passer en production" icon="flag-checkered" href="/guides/mise-en-production">
+    La checklist avant d'ouvrir les paiements à vos clients.
+  </Card>
+</CardGroup>

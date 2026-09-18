@@ -1,0 +1,45 @@
+---
+title: "Collection Postman"
+description: "Tester l'API depuis Postman avec la collection officielle."
+icon: "flask"
+---
+
+<Card title="Télécharger la collection" icon="download" href="/DjonankoPay.postman_collection.json">
+  DjonankoPay.postman_collection.json — format Postman v2.1
+</Card>
+
+## Installation
+
+<Steps>
+  <Step title="Importez la collection">
+    Dans Postman : **Import → File**, sélectionnez le fichier téléchargé.
+  </Step>
+  <Step title="Créez un environnement">
+    **Environments → Create**, avec les variables suivantes :
+
+    | Variable | Valeur |
+    |---|---|
+    | `API_KEY` | Votre clé `DJN-…` |
+    | `API_SECRET` | Votre secret API |
+    | `MERCHANT_REFERENCE` | Votre référence marchand |
+    | `TOKEN` | Le `access_token` renvoyé par `login-merchant` |
+  </Step>
+  <Step title="Sélectionnez l'environnement et testez">
+    Commencez par **merchant → get balance** pour vérifier vos identifiants, puis **transactions → initiate a payment** pour créer un lien.
+  </Step>
+</Steps>
+
+## Contenu de la collection
+
+| Dossier | Requête | Authentification |
+|---|---|---|
+| transactions | Initiate a payment | Clé API |
+| transactions | Get payment status | Jeton marchand |
+| transactions | Get all payments | Jeton marchand |
+| transactions | Send webhook (simulation du payload reçu) | — |
+| webhook | Set your webhook URL | Jeton marchand |
+| merchant | Get balance | Jeton marchand |
+
+<Tip>
+Le **playground intégré** à cette documentation permet de tester chaque endpoint directement depuis votre navigateur, sans Postman : rendez-vous sur n'importe quelle page de la [référence API](/api-reference/introduction) et cliquez sur **Try it**.
+</Tip>

@@ -1,0 +1,74 @@
+---
+title: "Bienvenue sur Djonanko Pay"
+sidebarTitle: "Introduction"
+description: "Encaissez des paiements mobile money et carte en Côte d'Ivoire, au Burkina Faso, au Mali et au Cameroun avec une seule API."
+icon: "hand-wave"
+---
+
+Djonanko Pay est une passerelle de paiement pensée pour l'Afrique de l'Ouest et du Centre. Avec **une seule intégration**, vos clients paient par **Orange Money, MTN MoMo, Moov Money, Wave** ou **carte Visa**, et vous suivez tout depuis un dashboard marchand.
+
+<CardGroup cols={2}>
+  <Card title="Démarrage rapide" icon="rocket" href="/demarrage-rapide">
+    Créez votre premier lien de paiement en moins de 5 minutes.
+  </Card>
+  <Card title="Référence API" icon="code" href="/api-reference/introduction">
+    Tous les endpoints, avec un playground pour les tester en direct.
+  </Card>
+  <Card title="Webhooks" icon="bell" href="/guides/webhooks">
+    Recevez les notifications de paiement sur votre serveur.
+  </Card>
+  <Card title="Dashboard marchand" icon="gauge" href="/dashboard/apercu">
+    Transactions, reversements, rapports et clés API.
+  </Card>
+</CardGroup>
+
+## Comment ça marche
+
+<Steps>
+  <Step title="Vous créez un lien de paiement">
+    Un appel `POST /web-merchant/create-web-payment-link` avec le montant et vos URLs de retour. Vous recevez une URL de paiement hébergée (ou un QR code) et une référence `PAY…`.
+  </Step>
+  <Step title="Votre client paie">
+    Sur la page `checkout.djonanko.ci`, il choisit son opérateur, saisit son numéro et confirme sur son téléphone. Aucune donnée sensible ne transite par vos serveurs.
+  </Step>
+  <Step title="Vous êtes notifié">
+    Djonanko envoie un webhook `SUCCESS` ou `FAILED` sur votre URL, et redirige le client vers votre `return_url` ou `cancel_url`.
+  </Step>
+  <Step title="Vous encaissez">
+    Le montant net est crédité sur votre solde. Demandez un reversement vers votre compte mobile money ou bancaire depuis le dashboard ou par API.
+  </Step>
+</Steps>
+
+## Ce que couvre cette documentation
+
+| Section | Pour qui | Contenu |
+|---|---|---|
+| **Premiers pas** | Tout le monde | Authentification, flux de paiement, pays et opérateurs, gestion des erreurs |
+| **Guides d'intégration** | Développeurs | Liens de paiement, QR codes, webhooks, reversements, whitelisting IP, mise en production |
+| **Dashboard marchand** | Équipes finance & ops | Chaque onglet du dashboard expliqué |
+| **Référence API** | Développeurs | Chaque endpoint avec ses paramètres, ses réponses et un playground interactif |
+
+## Pays et opérateurs
+
+<Tabs>
+  <Tab title="Côte d'Ivoire">
+    Orange Money · MTN MoMo · Moov Money · Wave
+  </Tab>
+  <Tab title="Burkina Faso">
+    Orange Money · Moov Money
+  </Tab>
+  <Tab title="Mali">
+    Orange Money · Moov Money
+  </Tab>
+  <Tab title="Cameroun">
+    Orange Money · MTN MoMo
+  </Tab>
+</Tabs>
+
+<Note>
+Les montants sont exprimés en **FCFA** (XOF pour la zone UEMOA, XAF pour le Cameroun), sans décimales. Le montant minimum d'un paiement est de **101 FCFA**.
+</Note>
+
+## Besoin d'aide ?
+
+Notre équipe technique vous accompagne dans votre intégration : [contactez-nous](https://www.djonanko.ci/#contact).

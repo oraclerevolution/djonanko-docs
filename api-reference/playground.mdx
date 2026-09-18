@@ -1,0 +1,39 @@
+---
+title: "Utiliser le playground"
+description: "Tester chaque endpoint en direct depuis cette documentation, avec vos propres identifiants."
+icon: "play"
+---
+
+Chaque page d'endpoint de cette référence comporte un panneau **Try it** qui envoie de vraies requêtes à `https://apidjonanko.tech` depuis votre navigateur.
+
+<Warning>
+Le playground appelle **l'API de production**. Une requête `create-web-payment-link` crée un vrai lien de paiement ; une requête `request-disbursement` crée une vraie demande de reversement. Utilisez de petits montants et vérifiez vos paramètres avant d'envoyer.
+</Warning>
+
+## Renseigner vos identifiants
+
+<Steps>
+  <Step title="Endpoints à clé API">
+    Sur la page [Créer un lien de paiement](/api-reference/paiements/create-web-payment-link), remplissez les champs **x-api-key** et **x-api-secret** du panneau d'authentification. Ces valeurs sont dans l'onglet **Développeur** de votre dashboard.
+  </Step>
+  <Step title="Endpoints à jeton marchand">
+    Commencez par [Obtenir un jeton marchand](/api-reference/auth/login-merchant) avec votre numéro et votre mot de passe. Copiez le `access_token` de la réponse, puis collez-le dans le champ **authenticationtoken** des autres pages.
+  </Step>
+  <Step title="Envoyez">
+    Ajustez les paramètres et cliquez sur **Send**. La réponse brute (code HTTP, en-têtes, corps) s'affiche sous le formulaire.
+  </Step>
+</Steps>
+
+<Note>
+Les identifiants saisis dans le playground restent **dans votre navigateur** ; ils ne sont pas transmis à Djonanko autrement que dans la requête elle-même.
+</Note>
+
+## Générer du code
+
+À droite de chaque endpoint, le bloc **exemples** propose l'appel équivalent en **cURL, JavaScript, Python et PHP**, mis à jour en fonction des valeurs que vous saisissez. Copiez-le directement dans votre projet.
+
+## Limites du playground
+
+- Les exports de fichiers (`payments/export`) et le téléchargement de rapports renvoient un binaire ou une redirection : préférez `curl` ou votre navigateur pour ces deux endpoints.
+- Le playground n'affiche pas les **webhooks entrants**. La page [Notification de paiement](/api-reference/webhooks/payment-notification) documente le payload que **vous** recevez.
+- Une fois le [whitelisting IP](/guides/ip-whitelisting) actif, les requêtes du playground proviendront de l'IP de votre poste : déclarez-la si vous voulez continuer à l'utiliser.

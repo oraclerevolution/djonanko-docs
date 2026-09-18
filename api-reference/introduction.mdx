@@ -1,0 +1,102 @@
+---
+title: "Référence API"
+description: "URL de base, authentification, conventions et liste des endpoints."
+icon: "book"
+---
+
+## URL de base
+
+```
+https://apidjonanko.tech
+```
+
+Toutes les requêtes et réponses sont en **JSON** (`Content-Type: application/json`), sauf les exports de fichiers.
+
+## Authentification
+
+| En-têtes | Pour |
+|---|---|
+| `x-api-key` + `x-api-secret` | Créer des liens de paiement / QR codes |
+| `authenticationtoken` (JWT) | Tout le reste : statut, transactions, solde, webhooks, reversements, rapports, sécurité |
+
+Le JWT s'obtient via [`POST /user/login-merchant`](/api-reference/auth/login-merchant) et se passe **sans** préfixe `Bearer`. Détails : [Authentification](/concepts/authentification).
+
+## Conventions
+
+- **Montants** : entiers en FCFA. Le solde est renvoyé en chaîne décimale (`"125000.00"`).
+- **Dates** : ISO 8601 en UTC (`2026-09-18T08:00:00.000Z`).
+- **Identifiants** : `merchant_reference` (votre référence), `payment_reference` (référence `PAY…` du paiement), `id` (UUID des ressources).
+- **Erreurs** : `{ "statusCode": 400, "message": "…", "error": "Bad Request" }`. Voir [Gestion des erreurs](/concepts/erreurs).
+- **Codes de succès** : `200` pour les lectures et mises à jour, `201` pour les créations (convention NestJS — les `POST` renvoient `201` même sans création de ressource).
+
+## Endpoints
+
+<AccordionGroup>
+  <Accordion title="Authentification">
+    | Méthode | Endpoint | Auth |
+    |---|---|---|
+    | `POST` | [`/user/login-merchant`](/api-reference/auth/login-merchant) | — |
+    | `POST` | [`/web-merchant/regenerate-api-key`](/api-reference/auth/regenerate-api-key) | Jeton |
+  </Accordion>
+  <Accordion title="Paiements">
+    | Méthode | Endpoint | Auth |
+    |---|---|---|
+    | `POST` | [`/web-merchant/create-web-payment-link`](/api-reference/paiements/create-web-payment-link) | Clé API |
+    | `GET` | [`/web-merchant/payment/status`](/api-reference/paiements/payment-status) | Jeton |
+    | `GET` | [`/web-merchant/payments`](/api-reference/paiements/list-payments) | Jeton |
+    | `GET` | [`/web-merchant/payments/search`](/api-reference/paiements/search-payments) | Jeton |
+    | `GET` | [`/web-merchant/payments/export`](/api-reference/paiements/export-payments) | Jeton |
+  </Accordion>
+  <Accordion title="Solde & statistiques">
+    | Méthode | Endpoint | Auth |
+    |---|---|---|
+    | `GET` | [`/web-merchant/get-balance`](/api-reference/solde/get-balance) | Jeton |
+    | `GET` | [`/web-merchant/merchants-transactions-count`](/api-reference/solde/transactions-count) | Jeton |
+    | `GET` | [`/web-merchant/merchants-monthly-transactions-count`](/api-reference/solde/monthly-transactions-count) | Jeton |
+    | `GET` | [`/web-merchant/merchants-transactions-flow`](/api-reference/solde/transactions-flow) | Jeton |
+  </Accordion>
+  <Accordion title="Webhooks">
+    | Méthode | Endpoint | Auth |
+    |---|---|---|
+    | `POST` | [Notification de paiement (entrant)](/api-reference/webhooks/payment-notification) | — |
+    | `PATCH` | [`/web-merchant/set-webhook-url`](/api-reference/webhooks/set-webhook-url) | Jeton |
+    | `GET` | [`/web-merchant/webhooks/failed`](/api-reference/webhooks/list-failed) | Jeton |
+    | `POST` | [`/web-merchant/webhooks/{id}/replay`](/api-reference/webhooks/replay) | Jeton |
+  </Accordion>
+  <Accordion title="Reversements">
+    | Méthode | Endpoint | Auth |
+    |---|---|---|
+    | `POST` | [`/web-merchant/request-disbursement`](/api-reference/reversements/request-disbursement) | Jeton |
+    | `GET` | [`/web-merchant/list-disbursements`](/api-reference/reversements/list-disbursements) | Jeton |
+    | `GET` | [`/web-merchant/refunds-stats`](/api-reference/reversements/refunds-stats) | Jeton |
+    | `GET` | [`/web-merchant/payout-accounts`](/api-reference/reversements/list-payout-accounts) | Jeton |
+    | `POST` | [`/web-merchant/payout-accounts`](/api-reference/reversements/create-payout-account) | Jeton |
+    | `PATCH` | [`/web-merchant/payout-accounts/{id}/set-primary`](/api-reference/reversements/set-primary-payout-account) | Jeton |
+    | `DELETE` | [`/web-merchant/payout-accounts/{id}`](/api-reference/reversements/delete-payout-account) | Jeton |
+    | `GET` | [`/banks/active`](/api-reference/reversements/list-banks) | — |
+  </Accordion>
+  <Accordion title="Sécurité">
+    | Méthode | Endpoint | Auth |
+    |---|---|---|
+    | `GET` | [`/web-merchant/allowed-ips`](/api-reference/securite/list-allowed-ips) | Jeton |
+    | `POST` | [`/web-merchant/allowed-ips`](/api-reference/securite/create-allowed-ip) | Jeton |
+    | `DELETE` | [`/web-merchant/allowed-ips/{id}`](/api-reference/securite/delete-allowed-ip) | Jeton |
+  </Accordion>
+  <Accordion title="Rapports">
+    | Méthode | Endpoint | Auth |
+    |---|---|---|
+    | `GET` | [`/web-merchant/reports`](/api-reference/rapports/list-reports) | Jeton |
+    | `POST` | [`/web-merchant/reports/generate`](/api-reference/rapports/generate-report) | Jeton |
+    | `GET` | [`/web-merchant/reports/{id}/download`](/api-reference/rapports/download-report) | Jeton |
+  </Accordion>
+  <Accordion title="Compte marchand">
+    | Méthode | Endpoint | Auth |
+    |---|---|---|
+    | `POST` | [`/web-merchant`](/api-reference/compte/register) | — |
+    | `GET` | [`/web-merchant/get-merchant-by-id`](/api-reference/compte/get-merchant) | Jeton |
+  </Accordion>
+</AccordionGroup>
+
+## Spécification OpenAPI
+
+La spécification complète est disponible au format OpenAPI 3.1 : [`openapi.yaml`](/openapi.yaml). Importez-la dans Postman, Insomnia ou un générateur de client.

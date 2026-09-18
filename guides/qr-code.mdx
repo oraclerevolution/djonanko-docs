@@ -1,0 +1,108 @@
+---
+title: "Paiement par QR code"
+description: "Générer un QR code à afficher en boutique, sur une facture ou sur un écran."
+icon: "qrcode"
+---
+
+Passez `isQrCode: true` lors de la création : la réponse contient une **image PNG encodée en data URL** au lieu de l'URL de paiement.
+
+```bash
+curl -X POST https://apidjonanko.tech/web-merchant/create-web-payment-link \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: $DJONANKO_API_KEY" \
+  -H "x-api-secret: $DJONANKO_API_SECRET" \
+  -d '{
+    "amount": 2500,
+    "merchant_reference": "beautyshop",
+    "isQrCode": true,
+    "return_url": "https://example.com/merci",
+    "cancel_url": "https://example.com/echec",
+    "metadata": { "order_id": "TICKET-0091" }
+  }'
+```
+
+```json
+{
+  "success": true,
+  "paymentLink": {
+    "id": "50f668cf-2a84-41e7-9bcb-6874b0d5d286",
+    "message": "Payment link created successfully",
+    "qrcode": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA…",
+    "reference": "PAYR9PVUYEWVF"
+  }
+}
+```
+
+## Afficher le QR code
+
+<Tabs>
+  <Tab title="HTML">
+    La data URL se place directement dans un attribut `src` :
+
+    ```html
+    <img src="data:image/png;base64,iVBORw0KGgo…" alt="Scannez pour payer 2 500 FCFA" width="256" />
+    ```
+  </Tab>
+  <Tab title="React">
+    ```jsx
+    function PayQr({ qrcode, amount }) {
+      return (
+        <figure>
+          <img src={qrcode} alt={`Scannez pour payer ${amount} FCFA`} width={256} />
+          <figcaption>Scannez avec l'appareil photo de votre téléphone</figcaption>
+        </figure>
+      );
+    }
+    ```
+  </Tab>
+  <Tab title="Impression / PDF">
+    Décodez le base64 pour obtenir le fichier PNG :
+
+    ```javascript
+    const base64 = qrcode.replace(/^data:image\/png;base64,/, "");
+    fs.writeFileSync(`qr-${reference}.png`, Buffer.from(base64, "base64"));
+    ```
+
+    ```python
+    import base64
+    data = qrcode.split(",", 1)[1]
+    with open(f"qr-{reference}.png", "wb") as f:
+        f.write(base64.b64decode(data))
+    ```
+  </Tab>
+</Tabs>
+
+## Ce que contient le QR code
+
+Le QR code encode l'URL `https://checkout.djonanko.ci/{reference}`. Le client qui le scanne arrive sur la même page de paiement que via un lien : le parcours, les statuts et les webhooks sont identiques.
+
+<Tip>
+Vous pouvez donc générer un lien classique et **fabriquer votre propre QR code** avec la librairie de votre choix, si vous voulez le personnaliser (logo, couleurs). Le comportement sera le même.
+</Tip>
+
+## Suivre le paiement en point de vente
+
+Un QR code affiché sur un écran de caisse doit indiquer en temps réel quand le paiement est reçu. Deux approches :
+
+1. **Webhook** (recommandé) : votre serveur reçoit `SUCCESS` et pousse l'information à la caisse (WebSocket, SSE, polling interne).
+2. **Polling** : la caisse interroge [`GET /web-merchant/payment/status`](/api-reference/paiements/payment-status) toutes les 3 à 5 secondes jusqu'à un statut final.
+
+```javascript
+async function waitForPayment(reference, token, { intervalMs = 4000, timeoutMs = 300000 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const res = await fetch(
+      `https://apidjonanko.tech/web-merchant/payment/status?payment_reference=${reference}`,
+      { headers: { authenticationtoken: token } }
+    );
+    const { status } = await res.json();
+    if (status !== "PENDING") return status; // SUCCESS ou FAILED
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  return "TIMEOUT";
+}
+```
+
+## Durée de validité
+
+Comme un lien, un QR code expire **24 heures** après sa création. Pour une affiche permanente, générez un nouveau QR code à chaque commande plutôt qu'un QR code statique.

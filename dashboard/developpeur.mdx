@@ -1,0 +1,38 @@
+---
+title: "Espace Développeur"
+description: "Vos identifiants d'intégration, l'URL de webhook et les adresses IP autorisées."
+icon: "code"
+---
+
+L'onglet **Développeur** centralise tout ce dont votre équipe technique a besoin.
+
+## Identifiants
+
+| Carte | Contenu |
+|---|---|
+| **Merchant ID** | Identifiant UUID de votre compte |
+| **Référence marchand** | La référence à passer dans `merchant_reference` |
+| **API Key** | Votre clé publique `DJN-…`, masquée par défaut |
+| **API Secret** | Masqué. Communiqué une seule fois à la création — s'il est perdu, régénérez-le |
+
+Chaque carte dispose d'un bouton **copier** et, pour les clés, d'un bouton **afficher / masquer**.
+
+### Nouvelle clé API
+
+Le bouton **Nouvelle clé API** régénère votre secret. L'ancien est **invalidé immédiatement** : mettez à jour vos intégrations dans la foulée. Le nouveau secret est aussi envoyé par SMS. Voir [Rotation des clés](/guides/rotation-des-cles).
+
+## Adresses IP autorisées
+
+Déclarez ici les IPs publiques sortantes de vos serveurs (IPv4, IPv6 ou plage CIDR, avec un libellé). Un compte à rebours affiche la date d'application du whitelisting : **25 septembre 2026**. Passé cette date, un compte sans IP déclarée ne peut plus appeler l'API.
+
+Limite : 20 entrées. Guide : [Whitelisting IP](/guides/ip-whitelisting).
+
+## Configuration des URLs
+
+**URL Webhook** — l'adresse HTTPS sur laquelle Djonanko envoie les notifications de paiement (`SUCCESS` / `FAILED`). Elle ne doit pas être protégée par une authentification. Guide : [Webhooks](/guides/webhooks).
+
+## Par API
+
+- [`POST /web-merchant/regenerate-api-key`](/api-reference/auth/regenerate-api-key)
+- [`PATCH /web-merchant/set-webhook-url`](/api-reference/webhooks/set-webhook-url)
+- [`GET`](/api-reference/securite/list-allowed-ips) / [`POST`](/api-reference/securite/create-allowed-ip) / [`DELETE`](/api-reference/securite/delete-allowed-ip) `/web-merchant/allowed-ips`

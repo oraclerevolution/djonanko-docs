@@ -1,0 +1,66 @@
+---
+title: "Mise en production"
+description: "La checklist à valider avant d'ouvrir les paiements à vos clients."
+icon: "flag-checkered"
+---
+
+<Info>
+Djonanko Pay n'a pas d'environnement sandbox séparé : les tests se font en production avec de **petits montants** (minimum 101 FCFA) que vous pouvez ensuite reverser. Les paiements de test apparaissent dans votre dashboard comme n'importe quel autre.
+</Info>
+
+## Checklist
+
+<AccordionGroup>
+  <Accordion title="Compte" icon="user-check" defaultOpen>
+    - [ ] Le compte marchand est **activé** par Djonanko (la création de lien ne renvoie plus `403`).
+    - [ ] La référence marchand utilisée dans le code correspond à celle du dashboard (sensible à la casse).
+    - [ ] Un compte de reversement est enregistré et défini comme **principal**.
+  </Accordion>
+
+  <Accordion title="Sécurité" icon="shield-halved" defaultOpen>
+    - [ ] Le secret API est stocké dans un gestionnaire de secrets, absent du code et des dépôts.
+    - [ ] Le secret n'est utilisé que **côté serveur**, jamais dans une app mobile ou du JavaScript navigateur.
+    - [ ] Les **IPs sortantes** de production et de préproduction sont [déclarées](/guides/ip-whitelisting) (obligatoire à partir du 25/09/2026).
+    - [ ] L'URL de webhook utilise un chemin non devinable.
+  </Accordion>
+
+  <Accordion title="Paiements" icon="credit-card" defaultOpen>
+    - [ ] Chaque commande stocke la `reference` du lien **avant** la redirection.
+    - [ ] `metadata.order_id` est renseigné à chaque création.
+    - [ ] Un rafraîchissement de page ne crée pas un second lien pour la même commande.
+    - [ ] Les pages `return_url` et `cancel_url` existent et gèrent le cas « paiement en attente de confirmation ».
+    - [ ] Un paiement de test de bout en bout a été réalisé pour **chaque opérateur** que vous comptez proposer.
+  </Accordion>
+
+  <Accordion title="Webhooks" icon="bell" defaultOpen>
+    - [ ] L'URL est en HTTPS, publique, sans authentification, et répond `200` en moins de 15 s.
+    - [ ] Le traitement est **idempotent** : un webhook rejoué ne livre pas deux fois.
+    - [ ] Le statut est **confirmé** via `GET /payment/status` avant toute action irréversible.
+    - [ ] Cloudflare / WAF laisse passer `User-Agent: Djonanko-Webhook/1.0` sur le chemin du webhook.
+    - [ ] Un job de rattrapage interroge le statut des commandes `PENDING` de plus de quelques minutes.
+    - [ ] Une alerte est en place si l'onglet **Webhooks en échec** se remplit.
+  </Accordion>
+
+  <Accordion title="Exploitation" icon="chart-line" defaultOpen>
+    - [ ] Les erreurs API sont journalisées avec le corps complet de la réponse.
+    - [ ] Les appels en `500` ou timeout sont réessayés avec backoff, sans dupliquer les liens.
+    - [ ] L'équipe finance sait où trouver les [exports](/dashboard/transactions) et les [rapports mensuels](/dashboard/rapports).
+    - [ ] Une procédure de [rotation du secret](/guides/rotation-des-cles) est documentée en interne.
+  </Accordion>
+</AccordionGroup>
+
+## Limites à connaître
+
+| Sujet | Valeur |
+|---|---|
+| Montant minimum d'un paiement | 101 FCFA |
+| Validité d'un lien / QR code | 24 heures |
+| Montant minimum d'un reversement | 500 FCFA |
+| IPs autorisées par compte | 20 |
+| Timeout webhook | 15 secondes |
+| Tentatives de livraison webhook | 8 sur ~31 heures |
+| Statuts de paiement | `PENDING`, `SUCCESS`, `FAILED` |
+
+## Support
+
+Pour l'activation du compte, une question d'intégration ou un incident : [contactez l'équipe Djonanko](https://www.djonanko.ci/#contact) en précisant votre **référence marchand** et, le cas échéant, la **référence `PAY…`** du paiement concerné.

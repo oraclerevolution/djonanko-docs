@@ -1,0 +1,48 @@
+---
+title: "Remboursements"
+description: "Demander un reversement de votre solde et suivre son traitement."
+icon: "arrows-rotate"
+---
+
+L'onglet **Remboursements** (reversements) vous permet de transférer votre solde vers votre compte de reversement principal.
+
+## Compteurs
+
+- **Effectués** — reversements `SUCCESS`
+- **En attente** — demandes `PENDING` ou `PROCESSING`
+- **Échoués** — reversements `FAILED`
+
+## Nouvelle demande
+
+<Steps>
+  <Step title="Vérifiez le compte de destination">
+    Le bloc **Reversement vers** affiche votre compte principal. S'il indique *Aucun moyen principal de reversement*, rendez-vous dans [Gestion des comptes](/dashboard/gestion-des-comptes) pour en ajouter un.
+  </Step>
+  <Step title="Saisissez le montant">
+    Minimum **500 FCFA**, maximum votre solde disponible.
+  </Step>
+  <Step title="Confirmez">
+    La demande apparaît en **En attente**. L'équipe Djonanko la valide, puis le transfert est exécuté.
+  </Step>
+</Steps>
+
+## Suivi
+
+| Statut | Signification |
+|---|---|
+| En attente (`PENDING`) | Demande enregistrée, en attente de validation |
+| En cours (`PROCESSING`) | Validée, solde débité, transfert lancé chez l'opérateur |
+| Effectué (`SUCCESS`) | Fonds reçus |
+| Échoué (`FAILED`) | Transfert refusé — le motif s'affiche au survol |
+
+<Note>
+Les reversements sont validés manuellement. Les délais dépendent de l'opérateur ou de la banque de destination.
+</Note>
+
+## Par API
+
+- Demande : [`POST /web-merchant/request-disbursement`](/api-reference/reversements/request-disbursement)
+- Liste : [`GET /web-merchant/list-disbursements`](/api-reference/reversements/list-disbursements)
+- Compteurs : [`GET /web-merchant/refunds-stats`](/api-reference/reversements/refunds-stats)
+
+Guide complet : [Reversements](/guides/reversements).
