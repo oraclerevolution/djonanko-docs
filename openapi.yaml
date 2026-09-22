@@ -130,7 +130,7 @@ components:
         isQrCode:
           type: boolean
           default: false
-          description: Si `true`, la réponse contient un QR code (image PNG encodée en data URL) au lieu de l'URL de paiement.
+          description: Si `true`, la réponse contient un QR code (image PNG encodée en data URL) au lieu de l'URL de paiement. Le QR code se scanne avec l'appareil photo du téléphone, sans application — pratique pour une facture, un point de vente ou une affiche.
           example: false
         metadata:
           $ref: "#/components/schemas/Metadata"

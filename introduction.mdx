@@ -26,7 +26,7 @@ Djonanko Pay est une passerelle de paiement pensée pour l'Afrique de l'Ouest et
 
 <Steps>
   <Step title="Vous créez un lien de paiement">
-    Un appel `POST /web-merchant/create-web-payment-link` avec le montant et vos URLs de retour. Vous recevez une URL de paiement hébergée (ou un QR code) et une référence `PAY…`.
+    Un appel `POST /web-merchant/create-web-payment-link` avec le montant et vos URLs de retour. Vous recevez une URL de paiement hébergée et une référence `PAY…`. Avec `isQrCode: true`, vous recevez à la place un **QR code** scannable avec l'appareil photo du téléphone — idéal sur une facture ou en point de vente.
   </Step>
   <Step title="Votre client paie">
     Sur la page `checkout.djonanko.ci`, il choisit son opérateur, saisit son numéro et confirme sur son téléphone. Aucune donnée sensible ne transite par vos serveurs.

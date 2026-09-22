@@ -4,7 +4,17 @@ description: "Générer un QR code à afficher en boutique, sur une facture ou s
 icon: "qrcode"
 ---
 
-Passez `isQrCode: true` lors de la création : la réponse contient une **image PNG encodée en data URL** au lieu de l'URL de paiement.
+En plus du lien de paiement, Djonanko peut générer un **QR code de paiement** que vos clients scannent avec **l'appareil photo de leur téléphone** — sans application à installer. Le scan ouvre directement la page de paiement, où le client choisit son opérateur et confirme.
+
+C'est le mode idéal quand il n'y a pas de redirection web possible :
+
+- **Facture ou devis** : imprimez le QR code sur le document, le client règle en le scannant.
+- **Point de vente** : affichez-le sur un écran de caisse ou une étiquette.
+- **Affiche, flyer, menu** : encaissez sans site web.
+
+## Générer un QR code
+
+C'est **le même endpoint** que pour un lien de paiement, [`POST /web-merchant/create-web-payment-link`](/api-reference/paiements/create-web-payment-link). La seule différence : passez `isQrCode: true` dans le payload. La réponse contient alors une **image PNG encodée en data URL** (`qrcode`) au lieu de `paymentUrl`.
 
 ```bash
 curl -X POST https://apidjonanko.tech/web-merchant/create-web-payment-link \
