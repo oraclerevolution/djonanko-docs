@@ -25,6 +25,22 @@ Le compte marqué **Principal** est celui utilisé par défaut pour toutes les d
 
 Cochez **Définir comme moyen principal** si ce compte doit recevoir vos reversements par défaut.
 
+## Règlement automatique
+
+La carte **Règlement automatique** permet de choisir comment vos fonds vous sont reversés :
+
+| Option | Effet |
+|---|---|
+| **Manuel** (défaut) | Vous lancez vos demandes depuis l'onglet Remboursements. |
+| **T+0** | Reversement automatique **chaque jour** à l'heure choisie. |
+| **T+1** | Reversement automatique **tous les deux jours** à l'heure choisie. |
+
+Choisissez l'**heure du règlement** (heure d'Abidjan) puis enregistrez. La carte rappelle les frais applicables (2 % mobile money, 1 500 FCFA banque) et la date du dernier règlement effectué.
+
+<Note>
+Les options T+0 / T+1 restent grisées tant qu'aucun compte n'est défini comme **principal**. En mode automatique, les demandes manuelles sont désactivées.
+</Note>
+
 ## Supprimer un contact
 
 Cliquez sur l'icône de suppression puis confirmez. Les reversements déjà demandés vers ce compte ne sont pas affectés : leurs coordonnées sont figées au moment de la demande.
@@ -36,3 +52,4 @@ Cliquez sur l'icône de suppression puis confirmez. Les reversements déjà dema
 - [`PATCH /web-merchant/payout-accounts/{id}/set-primary`](/api-reference/reversements/set-primary-payout-account)
 - [`DELETE /web-merchant/payout-accounts/{id}`](/api-reference/reversements/delete-payout-account)
 - [`GET /banks/active`](/api-reference/reversements/list-banks) — liste des banques
+- [`GET`](/api-reference/reversements/settlement-settings-get) / [`PATCH`](/api-reference/reversements/settlement-settings-update) `/web-merchant/settlement-settings` — mode de règlement

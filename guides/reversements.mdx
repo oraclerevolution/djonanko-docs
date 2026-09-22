@@ -30,19 +30,71 @@ stateDiagram-v2
 Les reversements sont **validés manuellement** par Djonanko avant exécution. Le montant minimum est de **500 FCFA** et ne peut excéder votre solde disponible.
 </Info>
 
-## Deux façons de récupérer vos fonds
+## Frais de reversement
 
-| Mode | Fonctionnement | Pour qui |
+Des frais sont retenus sur chaque reversement, manuel ou automatique, selon le type du compte de destination :
+
+| Compte de reversement | Frais | Exemple |
 |---|---|---|
-| **Règlement automatique T+0** | Votre solde est reversé automatiquement **chaque jour**, le jour même des encaissements, sur votre compte principal. | Trésorerie au quotidien, forte activité |
-| **Règlement automatique T+1** | Votre solde est reversé automatiquement **tous les deux jours** sur votre compte principal. | Regrouper les reversements, limiter le nombre de virements |
-| **À la demande** (par défaut) | Aucun reversement automatique : vous lancez vous-même chaque demande, quand vous le souhaitez, depuis le dashboard ou l'API. | Contrôle total du calendrier |
+| Mobile money (Orange, MTN, Moov, Wave) | **2 %** du montant demandé | 50 000 FCFA demandés → 1 000 de frais → **49 000 reçus** |
+| Virement bancaire | **1 500 FCFA** fixes | 50 000 FCFA demandés → 1 500 de frais → **48 500 reçus** |
 
-Le mode de règlement se choisit dans le dashboard, onglet **Remboursements**. Vous pouvez en changer à tout moment ; le règlement automatique nécessite un [compte de reversement principal](#1-enregistrer-un-compte-de-reversement).
+Vocabulaire utilisé dans l'API et le dashboard :
+
+- `amount` — le **brut** : ce que vous demandez, débité de votre solde et décompté de votre plafond mensuel ;
+- `fees` — les frais retenus ;
+- `netAmount` — le **net** : `amount - fees`, ce que le bénéficiaire reçoit réellement.
+
+Avant de confirmer une demande, obtenez un devis :
+
+```bash
+curl "https://apidjonanko.tech/web-merchant/disbursement-quote?merchant_reference=beautyshop&amount=50000" \
+  -H "authenticationtoken: $DJONANKO_TOKEN"
+```
+
+```json
+{ "gross": 50000, "fees": 1000, "net": 49000, "method": "MOBILE_MONEY", "feeRate": 0.02, "feeFixed": null,
+  "hasPrimaryAccount": true, "primaryAccountType": "wave", "minimumAmount": 500 }
+```
 
 <Note>
-Avec le règlement automatique, chaque reversement suit exactement le même cycle qu'une demande manuelle (`PENDING` → `PROCESSING` → `SUCCESS`) et apparaît dans la liste des reversements. Vous pouvez toujours lancer une demande manuelle en complément.
+Le net doit rester positif et respecter le minimum du moyen de paiement : **500 FCFA** en mobile money, **20 000 FCFA** pour un virement bancaire. Une demande qui ne couvre pas les frais est refusée (`400`).
 </Note>
+
+## Règlement automatique T+0 / T+1
+
+Par défaut, vous êtes en mode **manuel** : vous lancez chaque demande vous-même. Vous pouvez à la place activer un **règlement automatique** :
+
+| Mode | Fonctionnement |
+|---|---|
+| `MANUAL` (défaut) | Vous lancez vos demandes quand vous le souhaitez, depuis le dashboard ou l'API. |
+| `T0` | **Chaque jour**, à l'heure que vous choisissez, votre solde est reversé automatiquement sur votre compte principal. |
+| `T1` | **Tous les deux jours**, à l'heure choisie, même traitement. |
+
+Le réglage se fait dans le dashboard, onglet **Gestion des comptes → Règlement automatique**, ou par API :
+
+```bash
+# Activer T+0 à 18h (heure d'Abidjan)
+curl -X PATCH https://apidjonanko.tech/web-merchant/settlement-settings \
+  -H "Content-Type: application/json" \
+  -H "authenticationtoken: $DJONANKO_TOKEN" \
+  -d '{ "merchant_reference": "beautyshop", "mode": "T0", "time": "18:00" }'
+
+# Revenir en manuel
+curl -X PATCH https://apidjonanko.tech/web-merchant/settlement-settings \
+  -H "Content-Type: application/json" \
+  -H "authenticationtoken: $DJONANKO_TOKEN" \
+  -d '{ "merchant_reference": "beautyshop", "mode": "MANUAL" }'
+```
+
+Ce qu'il faut savoir :
+
+- **Un compte principal est requis** pour activer `T0` / `T1` ; l'heure est interprétée dans le fuseau `Africa/Abidjan` (UTC+0).
+- Le montant reversé est **tout votre solde disponible**, dans la limite du restant mensuel. Les frais s'appliquent comme pour une demande manuelle.
+- Si le solde est inférieur au minimum (500 FCFA, ou 20 000 FCFA net pour une banque), le règlement est **reporté** au passage suivant et le montant s'accumule.
+- **En mode automatique, les demandes manuelles sont désactivées** : `POST /request-disbursement` renvoie `400`. Repassez en `MANUAL` pour en lancer une.
+- Les reversements automatiques apparaissent dans la liste avec `automatic: true` et `settlementMode: "T0" | "T1"`, et suivent le même cycle de statuts. Ils sont validés et transférés immédiatement ; si le transfert automatique est impossible (virement bancaire non automatisable, RIB incomplet…), la demande reste `PENDING` pour un traitement manuel par Djonanko.
+- Consultez l'état courant avec [`GET /web-merchant/settlement-settings`](/api-reference/reversements/settlement-settings-get) (`mode`, `time`, `lastSettlementAt`).
 
 ## 1. Enregistrer un compte de reversement
 
@@ -96,7 +148,7 @@ Avant toute demande, déclarez au moins un compte et définissez-le comme **prin
 
 Pour changer de compte principal : [`PATCH /payout-accounts/{id}/set-primary`](/api-reference/reversements/set-primary-payout-account).
 
-## 2. Demander un reversement
+## 2. Demander un reversement (mode manuel)
 
 ```bash
 curl -X POST https://apidjonanko.tech/web-merchant/request-disbursement \
@@ -114,6 +166,10 @@ curl -X POST https://apidjonanko.tech/web-merchant/request-disbursement \
   "country": "CI",
   "operator": "wave",
   "status": "PENDING",
+  "fees": 1000,
+  "netAmount": 49000,
+  "feeBreakdown": { "gross": 50000, "fees": 1000, "net": 49000, "method": "MOBILE_MONEY", "feeRate": 0.02, "feeFixed": null },
+  "automatic": false,
   "payoutAccountId": "…",
   "payoutDetails": { "type": "wave", "phoneNumber": "+2250700000000", "country": "CI" },
   "createdAt": "2026-09-18T10:00:00.000Z"
@@ -122,7 +178,7 @@ curl -X POST https://apidjonanko.tech/web-merchant/request-disbursement \
 
 La demande est **toujours adressée au compte principal** s'il existe. Les champs `destination`, `country` et `operator` ne sont pris en compte que si aucun compte principal n'est enregistré (compatibilité avec les anciennes intégrations).
 
-Erreurs possibles : solde insuffisant, montant < 500 FCFA, aucun compte principal. Voir [Gestion des erreurs](/concepts/erreurs).
+Erreurs possibles : solde insuffisant, montant < 500 FCFA, net insuffisant pour couvrir les frais, plafond mensuel atteint, aucun compte principal, ou règlement automatique activé. Voir [Gestion des erreurs](/concepts/erreurs).
 
 ## 3. Suivre les reversements
 

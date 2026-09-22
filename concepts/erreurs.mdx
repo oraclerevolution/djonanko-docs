@@ -72,6 +72,21 @@ Lorsqu'une validation échoue sur plusieurs champs, `message` est un tableau :
   <Accordion title="400 — Le montant minimum est de 500 FCFA">
     Un reversement doit être d'au moins 500 FCFA.
   </Accordion>
+  <Accordion title="400 — Le règlement automatique T+0 est activé : vos reversements sont effectués chaque jour à 18:00…">
+    Les demandes manuelles sont désactivées en mode `T0` / `T1`. Repassez en `MANUAL` via le dashboard (Gestion des comptes) ou `PATCH /web-merchant/settlement-settings`.
+  </Accordion>
+  <Accordion title="400 — Montant insuffisant pour couvrir les frais (X FCFA)">
+    Le net (`amount - fees`) serait nul ou négatif. Augmentez le montant : 2 % de frais en mobile money, 1 500 FCFA fixes pour une banque.
+  </Accordion>
+  <Accordion title="400 — Plafond mensuel atteint : il vous reste X FCFA">
+    Vos reversements du mois atteignent votre plafond (200 000 FCFA, ou 2 000 000 après vérification). Faites vérifier votre entreprise dans l'onglet **Compliance** pour le relever.
+  </Accordion>
+  <Accordion title="400 — Définissez un moyen principal de reversement avant d'activer le règlement automatique">
+    `T0` / `T1` exigent un compte principal dans **Gestion des comptes**.
+  </Accordion>
+  <Accordion title="400 — Heure de règlement invalide, format attendu HH:mm">
+    `time` est obligatoire pour `T0` / `T1`, au format 24 h (`18:00`), heure d'Abidjan.
+  </Accordion>
   <Accordion title="400 — Aucun moyen principal de reversement n'est enregistré">
     Ajoutez un compte de reversement et définissez-le comme principal, ou fournissez `destination` et `operator` dans la demande.
   </Accordion>

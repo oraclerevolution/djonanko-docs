@@ -15,6 +15,8 @@ Djonanko Pay n'a pas d'environnement sandbox séparé : les tests se font en pro
     - [ ] Le compte marchand est **activé** par Djonanko (la création de lien ne renvoie plus `403`).
     - [ ] La référence marchand utilisée dans le code correspond à celle du dashboard (sensible à la casse).
     - [ ] Un compte de reversement est enregistré et défini comme **principal**.
+    - [ ] Le dossier **Compliance** est déposé si vous prévoyez plus de 200 000 FCFA de reversements par mois.
+    - [ ] Le mode de règlement (manuel, T+0, T+1) est choisi dans **Gestion des comptes**.
   </Accordion>
 
   <Accordion title="Sécurité" icon="shield-halved" defaultOpen>
@@ -55,7 +57,10 @@ Djonanko Pay n'a pas d'environnement sandbox séparé : les tests se font en pro
 |---|---|
 | Montant minimum d'un paiement | 101 FCFA |
 | Validité d'un lien / QR code | 24 heures |
-| Montant minimum d'un reversement | 500 FCFA |
+| Montant minimum d'un reversement | 500 FCFA (20 000 FCFA net pour un virement bancaire) |
+| Frais de reversement | 2 % mobile money · 1 500 FCFA banque |
+| Plafond mensuel de reversement | 200 000 FCFA · 2 000 000 FCFA après vérification (Compliance) |
+| Règlement automatique | T+0 (quotidien) ou T+1 (tous les 2 jours), heure d'Abidjan |
 | IPs autorisées par compte | 20 |
 | Timeout webhook | 15 secondes |
 | Tentatives de livraison webhook | 8 sur ~31 heures |

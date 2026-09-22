@@ -73,6 +73,8 @@ Les frais sont calculés au moment du paiement selon l'opérateur, le pays et le
 
 Le montant `amount` que vous transmettez est celui que le client voit et paie ; le net crédité est `amount - fees`.
 
+Des frais distincts s'appliquent ensuite au **reversement** de votre solde vers votre compte (2 % mobile money, 1 500 FCFA banque) : voir [Reversements](/guides/reversements#frais-de-reversement).
+
 ## Métadonnées
 
 Le champ `metadata` accepte trois clés (`order_id`, `email`, `phoneNumber`). Il est renvoyé **à l'identique** dans le webhook et dans la liste des paiements : c'est le moyen le plus simple de rapprocher un paiement avec votre commande.

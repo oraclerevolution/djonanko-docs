@@ -12,15 +12,9 @@ L'onglet **Remboursements** (reversements) vous permet de transférer votre sold
 - **En attente** — demandes `PENDING` ou `PROCESSING`
 - **Échoués** — reversements `FAILED`
 
-## Mode de règlement
+## Règlement automatique ou manuel
 
-Choisissez comment vos fonds vous sont reversés :
-
-- **T+0** — reversement automatique **chaque jour**, le jour même des encaissements.
-- **T+1** — reversement automatique **tous les deux jours**.
-- **Aucun** (par défaut) — pas de reversement automatique ; vous lancez vos demandes manuellement quand vous le souhaitez.
-
-Les reversements automatiques sont envoyés vers votre **compte principal** ([Gestion des comptes](/dashboard/gestion-des-comptes)) et apparaissent dans la liste ci-dessous comme n'importe quelle demande. Vous pouvez changer de mode à tout moment.
+Si vous avez activé le **règlement automatique T+0 ou T+1** (onglet [Gestion des comptes](/dashboard/gestion-des-comptes#reglement-automatique)), le bouton *Nouvelle demande* est remplacé par un rappel du type « Règlement automatique T+0 à 18:00 » : vos reversements partent seuls, à l'heure choisie, et apparaissent dans la liste ci-dessous. Pour lancer une demande à la main, repassez d'abord en mode manuel.
 
 ## Nouvelle demande
 
@@ -29,7 +23,7 @@ Les reversements automatiques sont envoyés vers votre **compte principal** ([Ge
     Le bloc **Reversement vers** affiche votre compte principal. S'il indique *Aucun moyen principal de reversement*, rendez-vous dans [Gestion des comptes](/dashboard/gestion-des-comptes) pour en ajouter un.
   </Step>
   <Step title="Saisissez le montant">
-    Minimum **500 FCFA**, maximum votre solde disponible.
+    Minimum **500 FCFA**, maximum votre solde disponible (et votre restant mensuel). Le formulaire affiche en direct le **devis** : *Montant demandé*, *Frais* (2 % en mobile money, 1 500 FCFA pour une banque) et **« Vous recevrez »**, le net qui arrivera sur votre compte.
   </Step>
   <Step title="Confirmez">
     La demande apparaît en **En attente**. L'équipe Djonanko la valide, puis le transfert est exécuté.
@@ -45,6 +39,8 @@ Les reversements automatiques sont envoyés vers votre **compte principal** ([Ge
 | Effectué (`SUCCESS`) | Fonds reçus |
 | Échoué (`FAILED`) | Transfert refusé — le motif s'affiche au survol |
 
+Chaque ligne affiche le montant brut, le net reçu et, pour les règlements automatiques, un badge **Auto T+0 / T+1**.
+
 <Note>
 Les reversements sont validés manuellement. Les délais dépendent de l'opérateur ou de la banque de destination.
 </Note>
@@ -54,5 +50,6 @@ Les reversements sont validés manuellement. Les délais dépendent de l'opérat
 - Demande : [`POST /web-merchant/request-disbursement`](/api-reference/reversements/request-disbursement)
 - Liste : [`GET /web-merchant/list-disbursements`](/api-reference/reversements/list-disbursements)
 - Compteurs : [`GET /web-merchant/refunds-stats`](/api-reference/reversements/refunds-stats)
+- Devis : [`GET /web-merchant/disbursement-quote`](/api-reference/reversements/disbursement-quote)
 
 Guide complet : [Reversements](/guides/reversements).

@@ -29,6 +29,7 @@ tags:
   - name: Reversements
   - name: Sécurité
   - name: Rapports
+  - name: Conformité
   - name: Compte marchand
 
 security: []
@@ -502,6 +503,29 @@ components:
           example: wave
         status:
           $ref: "#/components/schemas/DisbursementStatus"
+        fees:
+          type: number
+          description: Frais de reversement retenus (2 % mobile money, 1 500 FCFA banque).
+          example: 1000
+        netAmount:
+          type: number
+          description: Montant réellement envoyé au bénéficiaire (`amount - fees`).
+          example: 49000
+        feeBreakdown:
+          $ref: "#/components/schemas/FeeBreakdown"
+        automatic:
+          type: boolean
+          description: "`true` si le reversement a été créé par le règlement automatique T+0 / T+1."
+          example: false
+        settlementMode:
+          type: string
+          nullable: true
+          enum: [T0, T1, null]
+          description: Mode de règlement à l'origine d'un reversement automatique.
+        settlementSummary:
+          type: object
+          nullable: true
+          description: Bilan de la période réglée (règlement automatique uniquement) — `collectionsCount`, `grossCollected`, `collectionFees`, `netCollected`, `windowStart`, `windowEnd`, `balanceBefore`, `monthlyRemaining`.
         payoutAccountId:
           type: string
           nullable: true
@@ -531,6 +555,135 @@ components:
         updatedAt:
           type: string
           format: date-time
+
+    FeeBreakdown:
+      type: object
+      description: Détail du calcul des frais d'un reversement.
+      properties:
+        gross:
+          type: integer
+          description: Montant demandé, débité du solde.
+          example: 50000
+        fees:
+          type: integer
+          example: 1000
+        net:
+          type: integer
+          description: Montant envoyé au bénéficiaire.
+          example: 49000
+        method:
+          type: string
+          enum: [MOBILE_MONEY, BANK]
+        feeRate:
+          type: number
+          nullable: true
+          description: Taux appliqué (mobile money).
+          example: 0.02
+        feeFixed:
+          type: integer
+          nullable: true
+          description: Frais fixes appliqués (banque).
+          example: null
+
+    SettlementMode:
+      type: string
+      enum: [MANUAL, T0, T1]
+      description: |
+        - `MANUAL` (défaut) — vous lancez vos demandes de reversement vous-même.
+        - `T0` — reversement automatique **chaque jour** à l'heure choisie.
+        - `T1` — reversement automatique **tous les deux jours** à l'heure choisie.
+
+    SettlementSettings:
+      type: object
+      properties:
+        mode:
+          $ref: "#/components/schemas/SettlementMode"
+        time:
+          type: string
+          nullable: true
+          description: Heure du règlement automatique, `HH:mm`. `null` en mode `MANUAL`.
+          example: "18:00"
+        timezone:
+          type: string
+          example: Africa/Abidjan
+        lastSettlementAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Date du dernier règlement automatique exécuté.
+        hasPrimaryAccount:
+          type: boolean
+          description: Un compte de reversement principal est requis pour `T0` / `T1`.
+        primaryAccountType:
+          type: string
+          nullable: true
+          example: wave
+        fees:
+          type: object
+          properties:
+            mobileMoneyRate:
+              type: number
+              example: 0.02
+            bankFixed:
+              type: integer
+              example: 1500
+
+    MonthlyLimits:
+      type: object
+      description: Plafond mensuel de reversement.
+      properties:
+        plafond:
+          type: integer
+          description: Plafond mensuel en FCFA — 200 000 par défaut, 2 000 000 une fois l'entreprise vérifiée.
+          example: 200000
+        consomme:
+          type: integer
+          example: 75000
+        restant:
+          type: integer
+          example: 125000
+
+    Compliance:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [PENDING, APPROVED, REJECTED]
+        legalName:
+          type: string
+          example: Beauty Shop SARL
+        legalForm:
+          type: string
+          nullable: true
+          example: SARL
+        activity:
+          type: string
+        rccmNumber:
+          type: string
+          example: CI-ABJ-2024-B-12345
+        dfeNumber:
+          type: string
+          nullable: true
+        address:
+          type: string
+        managerName:
+          type: string
+        managerIdType:
+          type: string
+          nullable: true
+          enum: [CNI, PASSPORT, null]
+        managerIdNumber:
+          type: string
+          nullable: true
+        documents:
+          type: object
+          description: URLs des documents déposés, indexées par clé (`rccm`, `dfe`, `rib`, `managerId`, `managerSelfie`, `statutes`).
+        rejectionReason:
+          type: string
+          nullable: true
 
     AllowedIp:
       type: object
@@ -638,6 +791,12 @@ components:
           example: "125000.00"
         isActive:
           type: boolean
+        settlementMode:
+          $ref: "#/components/schemas/SettlementMode"
+        settlementTime:
+          type: string
+          nullable: true
+          example: "18:00"
         country:
           type: string
           example: CI
@@ -1303,6 +1462,14 @@ paths:
         Crée une demande de reversement de votre solde vers votre **compte principal de reversement**.
         Montant minimum : **500 FCFA**. La demande passe en `PENDING` jusqu'à validation par Djonanko.
 
+        **Frais** : 2 % du montant pour un compte mobile money, 1 500 FCFA fixes pour un virement bancaire.
+        `amount` est le brut débité de votre solde ; le bénéficiaire reçoit `netAmount = amount - fees`.
+        Obtenez un devis avant de confirmer avec [`GET /disbursement-quote`](/api-reference/reversements/disbursement-quote).
+
+        **Refusé (`400`) si le règlement automatique T+0 / T+1 est activé** : repassez en `MANUAL` via `PATCH /settlement-settings`.
+
+        Le montant est aussi soumis à votre **plafond mensuel** (200 000 FCFA, 2 000 000 après vérification de l'entreprise).
+
         Si aucun compte principal n'est enregistré, vous devez fournir `destination` et `operator`.
       security:
         - MerchantToken: []
@@ -1321,7 +1488,7 @@ paths:
                 amount:
                   type: number
                   minimum: 500
-                  description: Montant en FCFA (≥ 500 et ≤ solde disponible).
+                  description: Montant brut en FCFA (≥ 500 et ≤ solde disponible). Les frais sont déduits de ce montant.
                   example: 50000
                 destination:
                   type: string
@@ -1342,12 +1509,27 @@ paths:
               schema:
                 $ref: "#/components/schemas/Disbursement"
         "400":
-          description: Montant trop faible, solde insuffisant ou aucun compte principal.
+          description: Montant trop faible, solde insuffisant, aucun compte principal, plafond mensuel atteint, ou règlement automatique activé.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
               examples:
+                automatique:
+                  value:
+                    statusCode: 400
+                    message: "Le règlement automatique T+0 est activé : vos reversements sont effectués chaque jour à 18:00. Passez en règlement manuel dans « Gestion des comptes » pour lancer une demande."
+                    error: Bad Request
+                plafond:
+                  value:
+                    statusCode: 400
+                    message: "Plafond mensuel atteint : il vous reste 25 000 FCFA"
+                    error: Bad Request
+                frais:
+                  value:
+                    statusCode: 400
+                    message: Montant insuffisant pour couvrir les frais (1 500 FCFA)
+                    error: Bad Request
                 solde:
                   value:
                     statusCode: 400
@@ -1362,6 +1544,157 @@ paths:
                   value:
                     statusCode: 400
                     message: Aucun moyen principal de reversement n'est enregistré. Ajoutez un contact principal dans « Gestion des comptes ».
+                    error: Bad Request
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /web-merchant/disbursement-quote:
+    get:
+      tags: [Reversements]
+      operationId: getDisbursementQuote
+      summary: Devis d'un reversement
+      description: |
+        Calcule les frais et le montant net que vous recevrez pour un montant donné, selon le type de votre
+        **compte principal** (2 % mobile money, 1 500 FCFA banque). Sans compte principal, le calcul suppose du mobile money.
+      security:
+        - MerchantToken: []
+      parameters:
+        - $ref: "#/components/parameters/MerchantReference"
+        - name: amount
+          in: query
+          required: true
+          description: Montant brut envisagé, en FCFA.
+          schema:
+            type: integer
+            example: 50000
+      responses:
+        "200":
+          description: Devis.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/FeeBreakdown"
+                  - type: object
+                    properties:
+                      hasPrimaryAccount:
+                        type: boolean
+                      primaryAccountType:
+                        type: string
+                        nullable: true
+                        example: wave
+                      minimumAmount:
+                        type: integer
+                        example: 500
+              example:
+                gross: 50000
+                fees: 1000
+                net: 49000
+                method: MOBILE_MONEY
+                feeRate: 0.02
+                feeFixed: null
+                hasPrimaryAccount: true
+                primaryAccountType: wave
+                minimumAmount: 500
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /web-merchant/settlement-settings:
+    get:
+      tags: [Reversements]
+      operationId: getSettlementSettings
+      summary: Consulter le mode de règlement
+      description: Mode de règlement (`MANUAL`, `T0`, `T1`), heure, dernier règlement automatique et grille de frais.
+      security:
+        - MerchantToken: []
+      parameters:
+        - $ref: "#/components/parameters/MerchantReference"
+      responses:
+        "200":
+          description: Paramètres de règlement.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettlementSettings"
+              example:
+                mode: T0
+                time: "18:00"
+                timezone: Africa/Abidjan
+                lastSettlementAt: "2026-09-21T18:00:12.000Z"
+                hasPrimaryAccount: true
+                primaryAccountType: wave
+                fees:
+                  mobileMoneyRate: 0.02
+                  bankFixed: 1500
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    patch:
+      tags: [Reversements]
+      operationId: updateSettlementSettings
+      summary: Choisir le mode de règlement
+      description: |
+        Active le règlement automatique **T+0** (chaque jour) ou **T+1** (tous les deux jours) à l'heure indiquée
+        (fuseau `Africa/Abidjan`), ou repasse en **MANUAL**.
+
+        Pour `T0` / `T1` : `time` est obligatoire et un **compte de reversement principal** doit exister.
+        En mode automatique, les demandes manuelles (`POST /request-disbursement`) sont refusées.
+      security:
+        - MerchantToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [merchant_reference, mode]
+              properties:
+                merchant_reference:
+                  type: string
+                  example: beautyshop
+                mode:
+                  $ref: "#/components/schemas/SettlementMode"
+                time:
+                  type: string
+                  pattern: "^([01]\\d|2[0-3]):[0-5]\\d$"
+                  description: Heure du règlement `HH:mm` (Africa/Abidjan). Requis pour `T0` et `T1`, ignoré pour `MANUAL`.
+                  example: "18:00"
+            examples:
+              t0:
+                summary: Règlement quotidien à 18h
+                value:
+                  merchant_reference: beautyshop
+                  mode: T0
+                  time: "18:00"
+              manual:
+                summary: Retour au mode manuel
+                value:
+                  merchant_reference: beautyshop
+                  mode: MANUAL
+      responses:
+        "200":
+          description: Paramètres mis à jour.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettlementSettings"
+        "400":
+          description: Mode invalide, heure manquante ou aucun compte principal.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              examples:
+                heure:
+                  value:
+                    statusCode: 400
+                    message: Heure de règlement invalide, format attendu HH:mm
+                    error: Bad Request
+                compte:
+                  value:
+                    statusCode: 400
+                    message: Définissez un moyen principal de reversement avant d'activer le règlement automatique
                     error: Bad Request
         "401":
           $ref: "#/components/responses/Unauthorized"
@@ -1777,6 +2110,143 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+
+  # ---------------------------------------------------------------------------
+  # Conformité (KYC entreprise)
+  # ---------------------------------------------------------------------------
+  /web-merchant/compliance:
+    get:
+      tags: [Conformité]
+      operationId: getCompliance
+      summary: Consulter le dossier de conformité
+      description: |
+        Statut de la vérification de votre entreprise, liste des documents attendus et **plafond mensuel** de reversement
+        (200 000 FCFA par défaut, 2 000 000 FCFA une fois le dossier approuvé).
+      security:
+        - MerchantToken: []
+      parameters:
+        - $ref: "#/components/parameters/MerchantReference"
+      responses:
+        "200":
+          description: Dossier et plafond.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  compliance:
+                    oneOf:
+                      - $ref: "#/components/schemas/Compliance"
+                      - type: "null"
+                    description: "`null` tant qu'aucun dossier n'a été déposé."
+                  requiredDocuments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key:
+                          type: string
+                          example: rccm
+                        label:
+                          type: string
+                          example: RCCM
+                  limits:
+                    $ref: "#/components/schemas/MonthlyLimits"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [Conformité]
+      operationId: submitCompliance
+      summary: Déposer le dossier de conformité
+      description: |
+        Envoi en `multipart/form-data` des informations de l'entreprise et des pièces justificatives
+        (JPG, PNG, WEBP ou PDF, 8 Mo max par fichier). Toutes les pièces sont requises au premier dépôt ;
+        après un rejet, seules les pièces renvoyées sont remplacées.
+
+        Une fois approuvé par Djonanko, votre plafond mensuel passe à **2 000 000 FCFA**.
+      security:
+        - MerchantToken: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [merchant_reference, legalName, activity, rccmNumber, address, managerName, rccm, dfe, rib, managerId, managerSelfie, statutes]
+              properties:
+                merchant_reference:
+                  type: string
+                  example: beautyshop
+                legalName:
+                  type: string
+                  description: Raison sociale.
+                  example: Beauty Shop SARL
+                legalForm:
+                  type: string
+                  description: Forme juridique (SARL, SA, SAS, EI…).
+                  example: SARL
+                activity:
+                  type: string
+                  description: Description de l'activité et des services payés via Djonanko Pay.
+                rccmNumber:
+                  type: string
+                  example: CI-ABJ-2024-B-12345
+                dfeNumber:
+                  type: string
+                address:
+                  type: string
+                  description: Adresse du siège.
+                managerName:
+                  type: string
+                  description: Nom complet du gérant.
+                managerIdType:
+                  type: string
+                  enum: [CNI, PASSPORT]
+                managerIdNumber:
+                  type: string
+                rccm:
+                  type: string
+                  format: binary
+                  description: Registre de commerce.
+                dfe:
+                  type: string
+                  format: binary
+                  description: Déclaration fiscale d'existence.
+                rib:
+                  type: string
+                  format: binary
+                managerId:
+                  type: string
+                  format: binary
+                  description: CNI ou passeport du gérant.
+                managerSelfie:
+                  type: string
+                  format: binary
+                  description: Photo selfie du gérant.
+                statutes:
+                  type: string
+                  format: binary
+                  description: Statuts de l'entreprise.
+      responses:
+        "201":
+          description: Dossier déposé, en attente de vérification.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Compliance"
+                  - type: object
+                    properties:
+                      limits:
+                        $ref: "#/components/schemas/MonthlyLimits"
+        "400":
+          description: Pièce manquante ou format non supporté.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   # ---------------------------------------------------------------------------
   # Compte marchand

@@ -79,6 +79,7 @@
               "dashboard/remboursements",
               "dashboard/gestion-des-comptes",
               "dashboard/rapports",
+              "dashboard/compliance",
               "dashboard/developpeur"
             ]
           }
@@ -134,6 +135,9 @@
           {
             "group": "Reversements",
             "pages": [
+              "api-reference/reversements/settlement-settings-get",
+              "api-reference/reversements/settlement-settings-update",
+              "api-reference/reversements/disbursement-quote",
               "api-reference/reversements/request-disbursement",
               "api-reference/reversements/list-disbursements",
               "api-reference/reversements/refunds-stats",
@@ -161,6 +165,13 @@
             ]
           },
           {
+            "group": "Conformité (KYC)",
+            "pages": [
+              "api-reference/conformite/get-compliance",
+              "api-reference/conformite/submit-compliance"
+            ]
+          },
+          {
             "group": "Compte marchand",
             "pages": [
               "api-reference/compte/register",
@@ -177,7 +188,12 @@
       "proxy": false
     },
     "examples": {
-      "languages": ["curl", "javascript", "python", "php"],
+      "languages": [
+        "curl",
+        "javascript",
+        "python",
+        "php"
+      ],
       "defaults": "required"
     }
   },
@@ -189,15 +205,27 @@
       {
         "header": "Produit",
         "items": [
-          { "label": "Dashboard marchand", "href": "https://pay.djonanko.tech" },
-          { "label": "Page de paiement", "href": "https://checkout.djonanko.ci" }
+          {
+            "label": "Dashboard marchand",
+            "href": "https://pay.djonanko.tech"
+          },
+          {
+            "label": "Page de paiement",
+            "href": "https://checkout.djonanko.ci"
+          }
         ]
       },
       {
         "header": "Ressources",
         "items": [
-          { "label": "Collection Postman", "href": "/DjonankoPay.postman_collection.json" },
-          { "label": "Statut de l'API", "href": "https://apidjonanko.tech" }
+          {
+            "label": "Collection Postman",
+            "href": "/DjonankoPay.postman_collection.json"
+          },
+          {
+            "label": "Statut de l'API",
+            "href": "https://apidjonanko.tech"
+          }
         ]
       }
     ]

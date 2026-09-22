@@ -66,6 +66,9 @@ Le JWT s'obtient via [`POST /user/login-merchant`](/api-reference/auth/login-mer
   <Accordion title="Reversements">
     | Méthode | Endpoint | Auth |
     |---|---|---|
+    | `GET` | [`/web-merchant/settlement-settings`](/api-reference/reversements/settlement-settings-get) | Jeton |
+    | `PATCH` | [`/web-merchant/settlement-settings`](/api-reference/reversements/settlement-settings-update) | Jeton |
+    | `GET` | [`/web-merchant/disbursement-quote`](/api-reference/reversements/disbursement-quote) | Jeton |
     | `POST` | [`/web-merchant/request-disbursement`](/api-reference/reversements/request-disbursement) | Jeton |
     | `GET` | [`/web-merchant/list-disbursements`](/api-reference/reversements/list-disbursements) | Jeton |
     | `GET` | [`/web-merchant/refunds-stats`](/api-reference/reversements/refunds-stats) | Jeton |
@@ -88,6 +91,12 @@ Le JWT s'obtient via [`POST /user/login-merchant`](/api-reference/auth/login-mer
     | `GET` | [`/web-merchant/reports`](/api-reference/rapports/list-reports) | Jeton |
     | `POST` | [`/web-merchant/reports/generate`](/api-reference/rapports/generate-report) | Jeton |
     | `GET` | [`/web-merchant/reports/{id}/download`](/api-reference/rapports/download-report) | Jeton |
+  </Accordion>
+  <Accordion title="Conformité (KYC)">
+    | Méthode | Endpoint | Auth |
+    |---|---|---|
+    | `GET` | [`/web-merchant/compliance`](/api-reference/conformite/get-compliance) | Jeton |
+    | `POST` | [`/web-merchant/compliance`](/api-reference/conformite/submit-compliance) | Jeton |
   </Accordion>
   <Accordion title="Compte marchand">
     | Méthode | Endpoint | Auth |

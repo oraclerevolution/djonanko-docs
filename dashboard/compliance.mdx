@@ -1,0 +1,51 @@
+---
+title: "Compliance"
+description: "Faire vérifier votre entreprise pour relever votre plafond mensuel de reversement."
+icon: "shield-check"
+---
+
+L'onglet **Compliance** permet de déposer le dossier de vérification de votre entreprise (KYC). Tant qu'il n'est pas approuvé, vos reversements sont limités à **200 000 FCFA par mois** ; une fois approuvé, le plafond passe à **2 000 000 FCFA**.
+
+## Statuts
+
+| Bandeau | Signification |
+|---|---|
+| **Non vérifiée** | Aucun dossier déposé — plafond 200 000 FCFA |
+| **Votre dossier est en cours de vérification** | Dossier déposé (`PENDING`), l'équipe Djonanko l'examine |
+| **Votre entreprise est vérifiée** | Dossier approuvé (`APPROVED`) — plafond 2 000 000 FCFA |
+| **Votre dossier a été rejeté** | Dossier refusé (`REJECTED`) avec un motif ; corrigez et renvoyez les pièces concernées |
+
+Un bandeau d'alerte apparaît aussi sur le dashboard lorsque votre restant mensuel passe sous **50 000 FCFA**.
+
+## Informations demandées
+
+| Champ | Obligatoire |
+|---|---|
+| Raison sociale | Oui |
+| Forme juridique (SARL, SA, SAS, EI…) | Non |
+| Description de l'activité — ce que vous vendez et ce qui est payé via Djonanko Pay | Oui |
+| Numéro RCCM | Oui |
+| Numéro DFE | Non |
+| Adresse du siège | Oui |
+| Nom complet du gérant | Oui |
+| Type et numéro de la pièce du gérant (CNI ou passeport) | Non |
+
+Ces informations doivent correspondre à vos documents officiels.
+
+## Pièces justificatives
+
+Toutes sont requises au premier dépôt, au format **JPG, PNG, WEBP ou PDF**, 8 Mo maximum par fichier :
+
+- RCCM
+- DFE
+- RIB
+- CNI ou passeport du gérant
+- Photo selfie du gérant
+- Statuts de l'entreprise
+
+Après un rejet, seules les pièces que vous renvoyez sont remplacées.
+
+## Par API
+
+- [`GET /web-merchant/compliance`](/api-reference/conformite/get-compliance) — statut, documents attendus et plafond (`limits.plafond`, `limits.consomme`, `limits.restant`)
+- [`POST /web-merchant/compliance`](/api-reference/conformite/submit-compliance) — dépôt en `multipart/form-data`
