@@ -30,6 +30,20 @@ stateDiagram-v2
 Les reversements sont **validés manuellement** par Djonanko avant exécution. Le montant minimum est de **500 FCFA** et ne peut excéder votre solde disponible.
 </Info>
 
+## Deux façons de récupérer vos fonds
+
+| Mode | Fonctionnement | Pour qui |
+|---|---|---|
+| **Règlement automatique T+0** | Votre solde est reversé automatiquement **chaque jour**, le jour même des encaissements, sur votre compte principal. | Trésorerie au quotidien, forte activité |
+| **Règlement automatique T+1** | Votre solde est reversé automatiquement **tous les deux jours** sur votre compte principal. | Regrouper les reversements, limiter le nombre de virements |
+| **À la demande** (par défaut) | Aucun reversement automatique : vous lancez vous-même chaque demande, quand vous le souhaitez, depuis le dashboard ou l'API. | Contrôle total du calendrier |
+
+Le mode de règlement se choisit dans le dashboard, onglet **Remboursements**. Vous pouvez en changer à tout moment ; le règlement automatique nécessite un [compte de reversement principal](#1-enregistrer-un-compte-de-reversement).
+
+<Note>
+Avec le règlement automatique, chaque reversement suit exactement le même cycle qu'une demande manuelle (`PENDING` → `PROCESSING` → `SUCCESS`) et apparaît dans la liste des reversements. Vous pouvez toujours lancer une demande manuelle en complément.
+</Note>
+
 ## 1. Enregistrer un compte de reversement
 
 Avant toute demande, déclarez au moins un compte et définissez-le comme **principal**. Cela se fait dans le dashboard (**Gestion des comptes**) ou par API.
