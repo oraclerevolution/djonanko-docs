@@ -107,8 +107,8 @@ icon: "rocket"
         "reference": "GUI-CI-20261001-7K2M9QX4",
         "status": "AWAITING_PAYER",
         "amount": 5000,
-        "fees": 75,
-        "netAmount": 4925,
+        "fees": 100,
+        "netAmount": 4900,
         "payerActionUrl": "https://pay.example.com/s/abc123",
         "requiresPayerAction": true
       }
@@ -152,7 +152,7 @@ curl "https://guichet.apidjonanko.tech/v1/cashout/quote?amount=25000" \
 
 ```json
 {
-  "amount": 25000, "fees": 250, "totalToDebit": 25250, "currency": "XOF",
+  "amount": 25000, "fees": 500, "totalToDebit": 25500, "currency": "XOF",
   "wallet": { "available": 480000, "balance": 500000, "reserved": 20000 },
   "sufficient": true
 }
