@@ -1,0 +1,245 @@
+---
+title: "Assistant IA (MCP)"
+description: "Brancher votre agent de code sur la documentation du Guichet, pour intégrer juste du premier coup."
+icon: "robot"
+---
+
+Si vous intégrez le Guichet avec l'aide d'un agent de code — Claude Code, Claude Desktop, Cursor, Windsurf, Copilot — vous pouvez lui donner accès direct à cette documentation.
+
+Djonanko expose un **serveur MCP** ([Model Context Protocol](https://modelcontextprotocol.io)) : votre agent y lit la spécification de l'API, les règles d'intégration et les codes d'erreur, et peut faire relire le code qu'il écrit avant que vous ne l'exécutiez.
+
+```
+https://mcp.apidjonanko.tech/mcp
+```
+
+<Note>
+**Pourquoi ça change quelque chose.** Un agent qui travaille de mémoire devine les noms de champs, oublie `Idempotency-Key`, rate `AWAITING_PAYER` et vérifie la signature d'un webhook sur un corps déjà désérialisé. Ces quatre erreurs sont les plus fréquentes en intégration, et les deux dernières coûtent de l'argent. Branché sur le MCP, il lit la bonne réponse au lieu de la supposer.
+</Note>
+
+## Ce que l'assistant ne fait pas
+
+<Warning>
+**Il ne parle jamais à l'API Guichet et ne détient aucune clé.**
+
+Il ne peut ni créer, ni consulter, ni annuler une opération réelle. Il ne voit pas votre portefeuille, ni vos transactions, ni vos identifiants. Vous n'avez **aucune clé à configurer** pour l'utiliser.
+
+C'est délibéré : un agent branché sur un outil capable de déclencher un transfert peut le déclencher sur une mauvaise interprétation. Ici, le pire qu'il puisse faire est de vous donner une mauvaise réponse — et c'est précisément ce que le MCP sert à éviter.
+</Warning>
+
+## Installation
+
+Aucune clé, aucun jeton, aucune variable d'environnement.
+
+<Tabs>
+  <Tab title="Claude Code">
+    ```bash
+    claude mcp add --transport http djonanko https://mcp.apidjonanko.tech/mcp
+    ```
+
+    Vérifiez avec `/mcp` dans une session : `djonanko` doit apparaître comme connecté.
+  </Tab>
+  <Tab title="Claude Desktop">
+    Dans `claude_desktop_config.json` :
+
+    ```json
+    {
+      "mcpServers": {
+        "djonanko": {
+          "url": "https://mcp.apidjonanko.tech/mcp"
+        }
+      }
+    }
+    ```
+
+    Redémarrez l'application.
+  </Tab>
+  <Tab title="Cursor">
+    Dans `.cursor/mcp.json`, à la racine de votre projet :
+
+    ```json
+    {
+      "mcpServers": {
+        "djonanko": {
+          "url": "https://mcp.apidjonanko.tech/mcp"
+        }
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="Windsurf">
+    Dans `~/.codeium/windsurf/mcp_config.json` :
+
+    ```json
+    {
+      "mcpServers": {
+        "djonanko": {
+          "serverUrl": "https://mcp.apidjonanko.tech/mcp"
+        }
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="VS Code">
+    Dans `.vscode/mcp.json` :
+
+    ```json
+    {
+      "servers": {
+        "djonanko": {
+          "type": "http",
+          "url": "https://mcp.apidjonanko.tech/mcp"
+        }
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="Client en stdio">
+    Certains clients ne parlent pas encore le transport HTTP. Passez par un relais :
+
+    ```json
+    {
+      "mcpServers": {
+        "djonanko": {
+          "command": "npx",
+          "args": ["-y", "mcp-remote", "https://mcp.apidjonanko.tech/mcp"]
+        }
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Vérifier que c'est branché
+
+Demandez simplement à votre agent :
+
+> Quels endpoints expose l'API Guichet Djonanko ?
+
+S'il répond avec les 22 opérations, leurs méthodes et leurs chemins — sans aller chercher sur le web — le serveur est joignable.
+
+## Ce que l'assistant sait faire
+
+<Note>
+Le serveur s'enrichit par étapes. Les outils marqués **disponible** fonctionnent dès maintenant ; les autres arrivent et cette page suivra. Entre-temps, votre agent se rabat sur la lecture de cette documentation, ce qui marche déjà mieux que sa seule mémoire.
+</Note>
+
+| Outil | Ce qu'il répond | État |
+|---|---|---|
+| `list_endpoints` | Le catalogue des 22 opérations : identifiant, méthode, chemin, résumé, idempotence requise, exigence de clé de production | **Disponible** |
+| `get_endpoint` | La définition complète d'une opération : en-têtes obligatoires, champs du corps avec leurs contraintes et valeurs permises, réponses, codes d'erreur possibles, `curl` prêt à coller | À venir |
+| `search_docs` | Une recherche dans cette documentation, qui comprend le français comme les identifiants exacts (`INSUFFICIENT_BALANCE`, `payerActionUrl`, `Djonanko-Signature`) | À venir |
+| `get_doc` | Le contenu complet d'une page, pour que l'agent lise le détail | À venir |
+| `get_example` | Un exemple d'intégration commenté, dans votre langage et votre framework | À venir |
+| `explain_error` | Ce que signifie un code d'erreur, s'il faut réessayer, et **avec quelle clé d'idempotence** | À venir |
+| `get_integration_checklist` | La liste de contrôle d'un flux, point par point, avec ce qu'il faut vérifier | À venir |
+| `review_request` | Une **relecture de votre requête avant exécution** : schéma, en-têtes, montant entier, couple pays/opérateur, format de numéro | À venir |
+| `validate_webhook` | Un **audit de votre code de réception de webhook** : corps brut, HMAC, comparaison à temps constant, fraîcheur de l'horodatage, déduplication | À venir |
+
+## Comment lui parler
+
+Un agent branché sur le MCP n'a plus besoin que vous lui copiiez la documentation. Parlez-lui de votre besoin métier, pas de l'API.
+
+<CodeGroup>
+```text Intégrer un encaissement
+Implémente un encaissement Orange en Côte d'Ivoire dans mon projet Express.
+Le montant vient de la commande. Gère la redirection du client si nécessaire,
+et la reprise si l'appel échoue.
+```
+
+```text Recevoir les notifications
+Écris le handler qui reçoit les notifications Djonanko sur /hooks/djonanko,
+avec la vérification de signature. Puis relis-le.
+```
+
+```text Comprendre une erreur
+J'ai reçu cette réponse de l'API Guichet. Qu'est-ce qui s'est passé,
+et dois-je réessayer ?
+
+{"success":false,"error":{"code":"IDEMPOTENCY_KEY_REUSED", ... }}
+```
+
+```text Avant de passer en production
+Confronte mon intégration du Guichet à la liste de contrôle de mise en
+production, et dis-moi ce qui manque.
+```
+</CodeGroup>
+
+### Trois habitudes qui changent le résultat
+
+<AccordionGroup>
+  <Accordion title="Demandez-lui de relire avant d'exécuter">
+    La relecture est l'outil le plus utile du lot, et le moins spontanément employé par un agent. Dites-le explicitement :
+
+    > Avant d'envoyer cette requête, fais-la relire.
+
+    Un montant passé en décimal, un couple pays/opérateur impossible, une clé d'idempotence constante : autant d'erreurs attrapées avant qu'elles ne coûtent un appel refusé en production.
+  </Accordion>
+  <Accordion title="Précisez votre langage et votre framework">
+    « en TypeScript avec Express », « en Python avec FastAPI », « en PHP avec Laravel ». Les exemples que l'assistant fournit sont écrits pour ces combinaisons, et un exemple adapté à votre pile vous évite une transposition où les détails se perdent — notamment l'accès au corps brut pour la vérification de signature, qui diffère d'un framework à l'autre.
+  </Accordion>
+  <Accordion title="Collez l'erreur entière, pas seulement le code">
+    L'assistant lit une réponse d'erreur JSON complète. Le champ `details` porte souvent l'information décisive : le solde disponible face au montant requis, les opérateurs valides pour un pays, la référence de l'opération déjà existante.
+  </Accordion>
+</AccordionGroup>
+
+## Les cinq règles qu'il fait respecter
+
+L'assistant rappelle ces règles à votre agent à chaque session. Elles correspondent aux erreurs qui reviennent le plus souvent, et aux seules qui coûtent de l'argent.
+
+<Steps>
+  <Step title="Les montants sont des entiers">
+    Le XOF, le XAF et le GNF n'ont pas de sous-unité : `5000` vaut 5 000 FCFA. Aucune décimale, aucun flottant dans votre code. Voir [Pays et opérateurs](/guichet/pays-et-operateurs#montants).
+  </Step>
+  <Step title="Idempotency-Key dérivée d'un identifiant métier">
+    Jamais une constante, jamais un UUID régénéré à chaque tentative — les deux ne protègent de rien. Voir [Idempotence](/guichet/idempotence).
+  </Step>
+  <Step title="Tester requiresPayerAction, pas une liste d'opérateurs">
+    C'est le piège d'intégration numéro un : si vous ignorez `payerActionUrl`, vos encaissements Orange, Wave et Djamo n'aboutissent jamais. Voir [États d'une opération](/guichet/etats-operation#awaiting_payer-le-cas-a-ne-pas-rater).
+  </Step>
+  <Step title="Vérifier la signature des webhooks sur le corps brut">
+    Avant toute désérialisation, avec une comparaison à temps constant. Recalculer le HMAC après un `JSON.parse` échoue systématiquement. Voir [Webhooks](/guichet/webhooks#verifier-la-signature).
+  </Step>
+  <Step title="Brancher la reprise sur error.code">
+    Jamais sur `error.message`, qui peut être reformulé. Et sur `503` ou `504`, l'issue est inconnue : réessayez avec la **même** clé d'idempotence. Voir [Erreurs](/guichet/erreurs).
+  </Step>
+</Steps>
+
+## Confidentialité
+
+Les outils de relecture reçoivent du code et des requêtes qui vous appartiennent. Notre engagement :
+
+- **Vos arguments ne sont pas journalisés.** Le code source que vous soumettez, vos en-têtes et vos corps de requête sont expurgés avant toute écriture dans nos journaux.
+- **Vos recherches ne sont pas conservées.** Les requêtes adressées à la recherche documentaire ne sont ni journalisées ni comptabilisées nominativement.
+- **Aucun secret ne nous est nécessaire.** Pour vérifier qu'une clé convient à un endpoint, seul son **préfixe** compte (`gk_live_` ou `gk_test_`). Ne transmettez jamais un secret complet à l'assistant — il n'en a pas l'usage.
+
+## Limites
+
+<Warning>
+L'assistant connaît la documentation, **pas votre compte**. Il ne peut pas vous dire si votre solde suffit, si votre compte est activé, ni quel est le statut d'une opération. Pour tout cela, c'est l'API qui répond : [`GET /merchants/me/wallet`](/guichet/api/wallet), [`GET /cashout/quote`](/guichet/api/cashout-quote), [`GET /operations/{reference}`](/guichet/api/get-operation).
+</Warning>
+
+Deux autres limites à garder en tête :
+
+- **L'audit de webhook signale ce qu'il voit, pas ce qu'il prouve.** Il reconnaît des motifs dans votre code ; il ne peut pas démontrer l'absence d'une faute. Un contrôle qui passe signifie « les éléments attendus ont été trouvés », pas « votre implémentation est correcte ».
+- **Les commissions ne sont pas calculées par l'assistant.** Pour un montant donné, [`GET /cashout/quote`](/guichet/api/cashout-quote) est la source de vérité.
+
+## Dépannage
+
+<AccordionGroup>
+  <Accordion title="Mon agent ne voit pas le serveur">
+    Vérifiez l'URL — elle se termine par `/mcp`. Puis que votre client prend en charge le transport HTTP : sinon, passez par le relais `mcp-remote` décrit plus haut. Enfin, redémarrez le client : la plupart ne relisent leur configuration qu'au démarrage.
+  </Accordion>
+  <Accordion title="Il répond mais ignore les règles d'intégration">
+    Demandez-lui explicitement de consulter la documentation Djonanko, puis de faire relire son code. Certains agents n'emploient un outil que lorsqu'on les y invite, surtout s'ils « croient » déjà connaître la réponse.
+  </Accordion>
+  <Accordion title="Il me demande une clé API">
+    Il n'en a pas besoin et ne doit pas en recevoir. Si un agent vous réclame vos identifiants Djonanko pour utiliser l'assistant, c'est qu'il confond le serveur MCP avec l'API : rappelez-lui que le MCP ne fait que de la documentation.
+  </Accordion>
+  <Accordion title="Derrière un proxy d'entreprise">
+    Le serveur est en HTTPS sur le port 443 et n'exige aucune authentification. Il suffit d'autoriser `mcp.apidjonanko.tech` en sortie.
+  </Accordion>
+</AccordionGroup>
+
+## Si vous n'utilisez pas d'agent
+
+Rien n'est perdu : toute la matière de l'assistant vient de cette documentation. Le [démarrage rapide](/guichet/demarrage-rapide) et la [référence API](/guichet/api/cashin) couvrent le même terrain, et la [spécification OpenAPI](https://docs.djonanko.ci/openapi-guichet.yaml) est téléchargeable pour générer un client.

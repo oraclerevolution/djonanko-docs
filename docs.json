@@ -190,6 +190,7 @@
             "pages": [
               "guichet/introduction",
               "guichet/demarrage-rapide",
+              "guichet/mcp",
               "guichet/authentification",
               "guichet/pays-et-operateurs"
             ]
