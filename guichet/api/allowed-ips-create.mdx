@@ -1,0 +1,10 @@
+---
+title: "Déclarer une adresse IP autorisée"
+openapi: "POST /merchants/me/allowed-ips"
+---
+
+<Tip>
+Si vous ne savez pas quelle adresse déclarer, demandez-la d'abord à [`GET /merchants/me/ip-check`](/guichet/api/ip-check) : derrière un NAT ou un proxy sortant, ce n'est pas toujours celle que vous croyez.
+
+Adresse IPv4 seule ou plage CIDR. Pensez aux régions de secours et aux tâches de fond.
+</Tip>

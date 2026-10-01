@@ -1,0 +1,195 @@
+---
+title: "Démarrage rapide"
+description: "De la création du compte au premier encaissement, en six étapes."
+icon: "rocket"
+---
+
+<Info>
+**Prérequis** : un jeton d'admission, transmis par votre référent Djonanko après accord. La création de compte sur le Guichet n'est pas ouverte librement.
+</Info>
+
+<Steps>
+  <Step title="Créez votre compte">
+    ```bash
+    curl -X POST https://guichet.apidjonanko.tech/v1/merchants/signup \
+      -H "Content-Type: application/json" \
+      -H "x-admission-token: <jeton fourni par Djonanko>" \
+      -d '{
+        "name": "Wakati Technologies",
+        "legalName": "Wakati Technologies SARL",
+        "email": "tech@wakati.ci",
+        "country": "CI",
+        "webhookUrl": "https://wakati.ci/hooks/djonanko"
+      }'
+    ```
+
+    ```json
+    {
+      "merchant": { "reference": "PRT-4F7K2M9Q", "status": "PENDING", "…": "…" },
+      "credentials": {
+        "apiKey": "gk_live_4f7k2m9q1a2b3c4d5e6f7a8b",
+        "apiSecret": "gs_live_…",
+        "environment": "live"
+      },
+      "webhookSecret": "whsec_…"
+    }
+    ```
+
+    <Warning>
+    **`apiSecret` et `webhookSecret` ne sont affichés qu'une seule fois.** Enregistrez-les immédiatement dans votre gestionnaire de secrets — ils ne sont pas récupérables.
+    </Warning>
+
+    Référence : [`POST /merchants/signup`](/guichet/api/signup).
+  </Step>
+
+  <Step title="Déclarez vos adresses IP de sortie">
+    Si vous ne savez pas depuis quelle adresse vos serveurs sortent :
+
+    ```bash
+    curl https://guichet.apidjonanko.tech/v1/merchants/me/ip-check \
+      -H "x-api-key: gk_live_…" -H "x-api-secret: gs_live_…"
+    ```
+
+    Puis déclarez-la :
+
+    ```bash
+    curl -X POST https://guichet.apidjonanko.tech/v1/merchants/me/allowed-ips \
+      -H "x-api-key: gk_live_…" -H "x-api-secret: gs_live_…" \
+      -H "Content-Type: application/json" \
+      -d '{ "cidr": "41.207.12.34", "label": "passerelle sortante Abidjan" }'
+    ```
+  </Step>
+
+  <Step title="Validez votre endpoint de notification">
+    Avant toute opération réelle, vérifiez que votre endpoint est joignable et que votre vérification de signature fonctionne :
+
+    ```bash
+    curl -X POST https://guichet.apidjonanko.tech/v1/merchants/me/webhooks/test \
+      -H "x-api-key: gk_live_…" -H "x-api-secret: gs_live_…"
+    ```
+
+    ```json
+    { "delivered": true, "url": "https://wakati.ci/hooks/djonanko" }
+    ```
+
+    Un `ping` signé est envoyé sur votre URL. Si `delivered` est `false`, le champ `hint` indique la piste à suivre. Détails : [Webhooks](/guichet/webhooks).
+  </Step>
+
+  <Step title="Attendez l'activation de votre compte">
+    Votre compte est créé en statut `PENDING`. Vous pouvez authentifier, consulter votre portefeuille, configurer vos notifications et déclarer vos adresses IP — mais **pas encore opérer**.
+
+    ```bash
+    curl https://guichet.apidjonanko.tech/v1/merchants/me \
+      -H "x-api-key: gk_live_…" -H "x-api-secret: gs_live_…"
+    ```
+
+    Tant que `status` n'est pas `ACTIVE`, les appels à `/cashin` et `/cashout` renvoient `403 ACCOUNT_SUSPENDED`. L'activation intervient après validation de votre dossier par Djonanko.
+  </Step>
+
+  <Step title="Lancez votre premier encaissement">
+    ```bash
+    curl -X POST https://guichet.apidjonanko.tech/v1/cashin \
+      -H "x-api-key: gk_live_…" -H "x-api-secret: gs_live_…" \
+      -H "Idempotency-Key: cmd-184-tentative-1" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "amount": 5000,
+        "country": "CI",
+        "operator": "ORANGE",
+        "payerPhone": "0701020304",
+        "externalReference": "CMD-2026-00184"
+      }'
+    ```
+
+    ```json
+    {
+      "operation": {
+        "reference": "GUI-CI-20261001-7K2M9QX4",
+        "status": "AWAITING_PAYER",
+        "amount": 5000,
+        "fees": 75,
+        "netAmount": 4925,
+        "payerActionUrl": "https://pay.example.com/s/abc123",
+        "requiresPayerAction": true
+      }
+    }
+    ```
+
+    <Warning>
+    Avec Orange, Wave et Djamo, le statut est `AWAITING_PAYER` et **vous devez envoyer votre client sur `payerActionUrl`**. Sans cela, l'encaissement n'aboutira jamais.
+
+    Avec MTN et Moov, le statut est `PENDING` : le client reçoit une demande de validation sur son téléphone, vous n'avez rien à afficher.
+    </Warning>
+
+    Conservez `operation.reference` avec votre commande : c'est l'identifiant à citer partout.
+  </Step>
+
+  <Step title="Traitez la notification">
+    Dès l'issue connue, Djonanko appelle votre URL :
+
+    ```json
+    {
+      "id": "evt_9f1c2b7e4a5d4c8fb0a1e2d3c4b5a697",
+      "type": "cashin.succeeded",
+      "createdAt": "2026-10-01T10:13:47.512Z",
+      "merchantReference": "PRT-4F7K2M9Q",
+      "data": { "operation": { "reference": "GUI-CI-20261001-7K2M9QX4", "status": "SUCCEEDED", "…": "…" } }
+    }
+    ```
+
+    **Vérifiez la signature avant de traiter**, répondez 2xx en moins de 15 secondes, et dédupliquez sur `id`. Le code de vérification est dans le guide [Webhooks](/guichet/webhooks).
+  </Step>
+</Steps>
+
+## Et pour un transfert ?
+
+Chiffrez d'abord, pour connaître la commission et vérifier votre solde :
+
+```bash
+curl "https://guichet.apidjonanko.tech/v1/cashout/quote?amount=25000" \
+  -H "x-api-key: gk_live_…" -H "x-api-secret: gs_live_…"
+```
+
+```json
+{
+  "amount": 25000, "fees": 250, "totalToDebit": 25250, "currency": "XOF",
+  "wallet": { "available": 480000, "balance": 500000, "reserved": 20000 },
+  "sufficient": true
+}
+```
+
+Puis lancez le transfert :
+
+```bash
+curl -X POST https://guichet.apidjonanko.tech/v1/cashout \
+  -H "x-api-key: gk_live_…" -H "x-api-secret: gs_live_…" \
+  -H "Idempotency-Key: paie-mars-0042" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "amount": 25000,
+    "country": "CI",
+    "operator": "WAVE",
+    "beneficiaryPhone": "0501020304",
+    "beneficiaryName": "Koffi Yao",
+    "externalReference": "PAIE-2026-03-0042"
+  }'
+```
+
+Votre portefeuille doit être approvisionné : un transfert immobilise le montant **et** la commission dès l'acceptation. Voir [Portefeuille](/guichet/portefeuille).
+
+## Prochaines étapes
+
+<CardGroup cols={2}>
+  <Card title="Idempotence" icon="fingerprint" href="/guichet/idempotence">
+    Comment ne jamais encaisser ni décaisser deux fois.
+  </Card>
+  <Card title="États d'une opération" icon="diagram-project" href="/guichet/etats-operation">
+    Ce que chaque statut signifie et ce qu'il implique pour vous.
+  </Card>
+  <Card title="Erreurs" icon="triangle-exclamation" href="/guichet/erreurs">
+    Tous les codes et la conduite à tenir.
+  </Card>
+  <Card title="Mise en production" icon="circle-check" href="/guichet/mise-en-production">
+    La liste de contrôle avant d'ouvrir les vannes.
+  </Card>
+</CardGroup>

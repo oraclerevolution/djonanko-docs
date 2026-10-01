@@ -1,0 +1,16 @@
+---
+title: "Encaisser un paiement"
+openapi: "POST /cashin"
+---
+
+<Warning>
+Avec **Orange, Wave et Djamo**, la réponse porte `requiresPayerAction: true` et `payerActionUrl` : vous devez envoyer votre client sur cette URL, sinon l'encaissement n'aboutira jamais.
+
+Avec **MTN et Moov**, le statut est `PENDING` : votre client reçoit une demande de validation sur son téléphone, vous n'avez rien à afficher.
+
+Testez `requiresPayerAction`, ne codez pas la liste des opérateurs en dur.
+</Warning>
+
+<Note>
+L'en-tête `Idempotency-Key` est **obligatoire**. Dérivez-le de votre identifiant de commande, jamais une constante — voir [Idempotence](/guichet/idempotence).
+</Note>

@@ -1,0 +1,10 @@
+---
+title: "Envoyer une notification de test"
+openapi: "POST /merchants/me/webhooks/test"
+---
+
+<Tip>
+À utiliser **avant** votre première opération réelle, pour valider votre endpoint et votre vérification de signature. Vérifiez aussi que votre code refuse bien une signature falsifiée : un contrôle qui accepte tout ne se voit pas en test.
+
+Si `delivered` est `false`, le champ `hint` donne la piste à suivre.
+</Tip>

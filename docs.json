@@ -2,7 +2,7 @@
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
   "name": "Djonanko Pay",
-  "description": "Documentation développeur de Djonanko Pay — la passerelle de paiement mobile money pour l'Afrique de l'Ouest et du Centre.",
+  "description": "Documentation développeur de Djonanko — passerelle de paiement mobile money et API Guichet d'agrégation cash-in / cash-out pour l'Afrique de l'Ouest et du Centre.",
   "colors": {
     "primary": "#0B4530",
     "light": "#2E9E6C",
@@ -176,6 +176,91 @@
             "pages": [
               "api-reference/compte/register",
               "api-reference/compte/get-merchant"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Guichet",
+        "icon": "arrow-right-arrow-left",
+        "openapi": "openapi-guichet.yaml",
+        "groups": [
+          {
+            "group": "Premiers pas",
+            "pages": [
+              "guichet/introduction",
+              "guichet/demarrage-rapide",
+              "guichet/authentification",
+              "guichet/pays-et-operateurs"
+            ]
+          },
+          {
+            "group": "Concepts",
+            "pages": [
+              "guichet/idempotence",
+              "guichet/portefeuille",
+              "guichet/etats-operation",
+              "guichet/webhooks",
+              "guichet/erreurs",
+              "guichet/mise-en-production"
+            ]
+          },
+          {
+            "group": "Encaissement",
+            "pages": [
+              "guichet/api/cashin"
+            ]
+          },
+          {
+            "group": "Transfert",
+            "pages": [
+              "guichet/api/cashout-quote",
+              "guichet/api/cashout"
+            ]
+          },
+          {
+            "group": "Opérations",
+            "pages": [
+              "guichet/api/list-operations",
+              "guichet/api/get-operation",
+              "guichet/api/operation-events"
+            ]
+          },
+          {
+            "group": "Portefeuille",
+            "pages": [
+              "guichet/api/wallet",
+              "guichet/api/statement"
+            ]
+          },
+          {
+            "group": "Notifications",
+            "pages": [
+              "guichet/api/operation-notification",
+              "guichet/api/webhook-secret-rotate",
+              "guichet/api/webhooks-list",
+              "guichet/api/webhooks-replay",
+              "guichet/api/webhooks-test"
+            ]
+          },
+          {
+            "group": "Sécurité — IPs autorisées",
+            "pages": [
+              "guichet/api/allowed-ips-list",
+              "guichet/api/allowed-ips-create",
+              "guichet/api/allowed-ips-delete",
+              "guichet/api/ip-check"
+            ]
+          },
+          {
+            "group": "Compte & clés",
+            "pages": [
+              "guichet/api/signup",
+              "guichet/api/get-me",
+              "guichet/api/update-me",
+              "guichet/api/credentials-list",
+              "guichet/api/credentials-create",
+              "guichet/api/credentials-revoke"
             ]
           }
         ]

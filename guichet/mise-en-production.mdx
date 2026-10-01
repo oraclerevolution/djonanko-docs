@@ -1,0 +1,120 @@
+---
+title: "Mise en production"
+description: "La liste de contrôle avant d'ouvrir le trafic réel."
+icon: "circle-check"
+---
+
+## Secrets et accès
+
+<Steps>
+  <Step title="Secrets dans un gestionnaire de secrets">
+    `apiSecret` et `webhookSecret` ne doivent figurer ni dans votre code, ni dans un dépôt Git, ni dans vos journaux, ni dans une variable d'environnement partagée avec un front.
+  </Step>
+  <Step title="Une clé de production distincte par environnement">
+    Émettez une clé par environnement et donnez-lui un `label` explicite. En cas de fuite, vous révoquez la bonne sans interrompre le reste.
+  </Step>
+  <Step title="Adresses IP de sortie déclarées">
+    Toutes les adresses, y compris celles des régions de secours et des tâches de fond. Vérifiez avec [`GET /merchants/me/ip-check`](/guichet/api/ip-check) depuis chaque environnement.
+  </Step>
+  <Step title="Procédure de rotation écrite et testée">
+    Au moins une fois, à blanc : émettre, déployer, vérifier `lastUsedAt`, révoquer. Le jour d'une fuite, ce n'est pas le moment de découvrir la procédure.
+  </Step>
+</Steps>
+
+## Idempotence et références
+
+<Steps>
+  <Step title="Idempotency-Key dérivée de votre identifiant métier">
+    `cashin-${order.id}`, jamais une constante ni un UUID régénéré à chaque tentative. Une clé régénérée ne protège de rien.
+  </Step>
+  <Step title="externalReference renseignée sur chaque opération">
+    C'est votre seconde ceinture contre le double déclenchement, et votre clé de rapprochement.
+  </Step>
+  <Step title="Logique de reprise correcte">
+    Sur `503` et `504`, réessayer avec la **même** clé. Sur `400`, `402`, `403` et `422`, ne pas réessayer tel quel. Voir [Idempotence](/guichet/idempotence#quand-reessayer-et-avec-quelle-cle).
+  </Step>
+</Steps>
+
+## Notifications
+
+<Steps>
+  <Step title="Endpoint en HTTPS, répondant 2xx en moins de 15 secondes">
+    Accusez réception, traitez en tâche de fond.
+  </Step>
+  <Step title="Vérification de signature testée">
+    Avec [`POST /merchants/me/webhooks/test`](/guichet/api/webhooks-test). Vérifiez aussi que votre code **refuse** une signature falsifiée et une signature périmée — un contrôle qui accepte tout ne se voit pas en test.
+  </Step>
+  <Step title="Traitement idempotent, déduplication sur id">
+    La livraison est « au moins une fois ».
+  </Step>
+  <Step title="Pare-feu applicatif configuré">
+    Si vous avez un WAF ou une protection anti-robot devant votre endpoint, autorisez nos appels. Un défi anti-robot fait échouer toutes les notifications.
+  </Step>
+  <Step title="Supervision de la file d'échecs">
+    Alerte sur l'accumulation de `FAILED` et `ABANDONED` dans [`GET /merchants/me/webhooks`](/guichet/api/webhooks-list).
+  </Step>
+</Steps>
+
+## Flux
+
+<Steps>
+  <Step title="AWAITING_PAYER géré">
+    Testez `requiresPayerAction` et redirigez vers `payerActionUrl`. Sans cela, les encaissements Orange, Wave et Djamo n'aboutiront jamais.
+  </Step>
+  <Step title="Rattrapage par consultation en place">
+    Une tâche périodique qui interroge les opérations non définitives au-delà de leur `expiresAt`. Les notifications ne sont pas la source de vérité.
+  </Step>
+  <Step title="available surveillé, pas balance">
+    Avant un transfert, et dans votre supervision : une alerte sur `available` bas vous évite une rafale de `402`.
+  </Step>
+  <Step title="Montants en entiers de bout en bout">
+    Aucun flottant dans votre code, votre base ni vos sérialisations.
+  </Step>
+</Steps>
+
+## Exploitation
+
+<Steps>
+  <Step title="requestId journalisé">
+    Celui que vous recevez dans l'en-tête `x-request-id`, ou celui que vous fournissez. C'est ce qui rend une demande de support instantanément exploitable.
+  </Step>
+  <Step title="Logique branchée sur error.code">
+    Jamais sur `error.message`.
+  </Step>
+  <Step title="Rapprochement périodique du relevé">
+    [`GET /merchants/me/wallet/statement`](/guichet/api/statement) contre votre comptabilité. Chaque ligne porte `balanceAfter` : le rapprochement est ligne à ligne. Triez sur `sequence`.
+  </Step>
+  <Step title="Alerte sur les opérations bloquées">
+    Une opération `PENDING` dont `expiresAt` est dépassé sans passage à un état définitif mérite un regard.
+  </Step>
+</Steps>
+
+## Test de bout en bout avant ouverture
+
+<Steps>
+  <Step title="Un encaissement réussi, sur un opérateur à redirection">
+    Orange ou Wave : vérifiez que votre client est bien redirigé et que vous recevez `cashin.succeeded`.
+  </Step>
+  <Step title="Un encaissement réussi, sur un opérateur à validation téléphone">
+    MTN ou Moov : vérifiez que vous n'affichez rien d'inutile et que la notification arrive.
+  </Step>
+  <Step title="Un encaissement échoué">
+    Par exemple en refusant la demande sur le téléphone : vérifiez que vous traitez bien `cashin.failed` et son `failure.code`.
+  </Step>
+  <Step title="Un transfert réussi">
+    Vérifiez l'enchaînement au relevé : `CASHOUT_HOLD`, puis `CASHOUT_RELEASE` + `CASHOUT_DEBIT` + `CASHOUT_FEE`.
+  </Step>
+  <Step title="Un transfert refusé">
+    Sur un numéro invalide : vérifiez que l'immobilisation est bien levée et que `available` retrouve son niveau.
+  </Step>
+  <Step title="Un rejeu idempotent">
+    Rappelez `POST /cashin` avec la même clé et le même corps : vous devez obtenir `200` et la réponse initiale, sans seconde opération.
+  </Step>
+  <Step title="Un rejeu de notification">
+    Depuis [`POST /merchants/me/webhooks/{id}/replay`](/guichet/api/webhooks-replay) : vérifiez que votre déduplication fonctionne et que vous ne traitez pas deux fois.
+  </Step>
+</Steps>
+
+<Tip>
+Les six premiers tests peuvent se faire sur de petits montants en production. Le Guichet n'a pas d'environnement de simulation séparé : une clé `test` authentifie et permet toutes les lectures, mais les opérations réelles exigent une clé `live`.
+</Tip>

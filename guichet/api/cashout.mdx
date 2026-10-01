@@ -1,0 +1,10 @@
+---
+title: "Transférer vers un compte mobile money"
+openapi: "POST /cashout"
+---
+
+<Warning>
+Le montant **et** la commission sont immobilisés dès l'acceptation : ils quittent `available` sans encore être débités de `balance`. À l'exécution ils sont débités ; en cas d'échec l'immobilisation est levée. Détail des mouvements : [Portefeuille](/guichet/portefeuille#limmobilisation-etape-par-etape).
+
+Cet endpoint exige une clé de production (`gk_live_`) et l'en-tête `Idempotency-Key`.
+</Warning>

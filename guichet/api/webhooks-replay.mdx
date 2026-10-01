@@ -1,0 +1,8 @@
+---
+title: "Rejouer une notification"
+openapi: "POST /merchants/me/webhooks/{id}/replay"
+---
+
+<Note>
+La notification est renvoyée à l'identique, avec une **signature réhorodatée** : elle passera donc votre contrôle de fenêtre temporelle. Une notification déjà livrée ne peut pas être rejouée.
+</Note>

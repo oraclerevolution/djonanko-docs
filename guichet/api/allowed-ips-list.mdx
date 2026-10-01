@@ -1,0 +1,8 @@
+---
+title: "Lister vos adresses IP autorisées"
+openapi: "GET /merchants/me/allowed-ips"
+---
+
+<Note>
+Le champ `mode` indique le régime en vigueur. En `enforce`, un appel depuis une adresse non déclarée est refusé en `403 IP_NOT_ALLOWED`. Voir [Authentification](/guichet/authentification#filtrage-par-adresse-ip).
+</Note>
