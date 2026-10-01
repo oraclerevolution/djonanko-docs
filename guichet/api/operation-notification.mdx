@@ -1,0 +1,10 @@
+---
+title: "Notification d'opération"
+openapi: "webhook operationNotification"
+---
+
+<Warning>
+Vérifiez la signature `Djonanko-Signature` **sur le corps brut**, avant toute désérialisation : si vous reparsez le JSON puis le ré-sérialisez pour calculer le HMAC, la vérification échouera systématiquement.
+
+Code de vérification en JavaScript, Python et PHP : [Webhooks](/guichet/webhooks#verifier-la-signature).
+</Warning>

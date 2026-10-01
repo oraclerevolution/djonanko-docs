@@ -1,0 +1,294 @@
+---
+title: "Webhooks"
+description: "Recevoir les notifications signées, vérifier la signature, surveiller les échecs."
+icon: "bell"
+---
+
+Dès qu'une opération atteint un état définitif — ou qu'un encaissement attend une action du payeur — Djonanko envoie une requête `POST` sur votre URL de notification.
+
+## Configurer votre URL
+
+À la création du compte, ou à tout moment :
+
+```bash
+curl -X PATCH https://guichet.apidjonanko.tech/v1/merchants/me \
+  -H "x-api-key: gk_live_…" -H "x-api-secret: gs_live_…" \
+  -H "Content-Type: application/json" \
+  -d '{ "webhookUrl": "https://wakati.ci/hooks/djonanko" }'
+```
+
+HTTPS obligatoire. Vous pouvez aussi surcharger l'URL **par opération**, via le champ `callbackUrl` de [`POST /cashin`](/guichet/api/cashin) et [`POST /cashout`](/guichet/api/cashout) — pratique pour router selon le type de flux.
+
+## Les types d'événements
+
+| Type | Signification |
+|---|---|
+| `cashin.awaiting_payer` | Le payeur doit agir sur `payerActionUrl` |
+| `cashin.succeeded` | Encaissement confirmé, votre portefeuille est crédité |
+| `cashin.failed` | Encaissement refusé |
+| `cashin.expired` | Aucune issue dans le délai |
+| `cashout.succeeded` | Le bénéficiaire a été crédité |
+| `cashout.failed` | Transfert refusé, immobilisation levée |
+| `cashout.expired` | Aucune issue dans le délai, immobilisation levée |
+| `operation.reversed` | Opération réglée à tort puis contre-passée |
+| `wallet.adjusted` | Régularisation de portefeuille |
+| `ping` | Notification de test |
+
+## Forme de la charge
+
+```json
+{
+  "id": "evt_9f1c2b7e4a5d4c8fb0a1e2d3c4b5a697",
+  "type": "cashin.succeeded",
+  "createdAt": "2026-10-01T10:13:47.512Z",
+  "merchantReference": "PRT-4F7K2M9Q",
+  "data": {
+    "operation": {
+      "reference": "GUI-CI-20261001-7K2M9QX4",
+      "type": "CASHIN",
+      "status": "SUCCEEDED",
+      "amount": 5000,
+      "fees": 75,
+      "netAmount": 4925,
+      "currency": "XOF",
+      "externalReference": "CMD-2026-00184",
+      "failure": null,
+      "metadata": { "cartId": "c_8891" }
+    }
+  }
+}
+```
+
+`data.operation` a exactement la même forme que les réponses de l'API : un seul mappage à écrire de votre côté.
+
+## Vérifier la signature
+
+Deux en-têtes accompagnent chaque notification :
+
+```
+Djonanko-Signature: t=1759226027,v1=3a7f9c1e8b2d4f6a0c5e7b9d1f3a5c7e9b1d3f5a7c9e1b3d5f7a9c1e3b5d7f9a
+Djonanko-Event:     cashin.succeeded
+```
+
+`v1` est un **HMAC-SHA256 de la chaîne `<t>.<corps brut>`**, calculé avec votre secret de signature (`whsec_…`).
+
+<Warning>
+**Vérifiez la signature sur le corps brut**, avant toute désérialisation. Si vous reparsez le JSON puis le ré-sérialisez pour calculer le HMAC, vous obtiendrez une chaîne différente (ordre des clés, espaces) et la vérification échouera systématiquement.
+
+Comparez aussi `t` à l'heure courante et refusez au-delà de 5 minutes : c'est ce qui rend une notification capturée inexploitable par un tiers.
+</Warning>
+
+<CodeGroup>
+```javascript Node.js / Express
+const crypto = require('crypto');
+const express = require('express');
+
+const app = express();
+
+// `express.raw` est indispensable : il faut les octets reçus, pas l'objet parsé.
+app.post(
+  '/hooks/djonanko',
+  express.raw({ type: 'application/json' }),
+  (req, res) => {
+    if (!verifier(req.body, req.get('Djonanko-Signature'), process.env.DJONANKO_WEBHOOK_SECRET)) {
+      return res.status(401).send('signature invalide');
+    }
+
+    const evenement = JSON.parse(req.body.toString('utf8'));
+
+    // On accuse réception tout de suite : le traitement ne doit pas faire
+    // dépasser les 15 secondes.
+    res.status(200).send('ok');
+
+    traiterEnTacheDeFond(evenement).catch(console.error);
+  },
+);
+
+function verifier(rawBody, header, secret, toleranceSeconds = 300) {
+  if (!header) return false;
+
+  const parts = Object.fromEntries(
+    header.split(',').map((p) => p.trim().split('=')),
+  );
+
+  const age = Math.abs(Date.now() / 1000 - Number(parts.t));
+  if (!Number.isFinite(age) || age > toleranceSeconds) return false;
+
+  const attendu = crypto
+    .createHmac('sha256', secret)
+    .update(`${parts.t}.${rawBody.toString('utf8')}`)
+    .digest('hex');
+
+  const a = Buffer.from(attendu);
+  const b = Buffer.from(parts.v1 ?? '');
+
+  // Comparaison à temps constant : une comparaison naïve laisse fuir l'octet
+  // où elle s'arrête, ce qui suffit à reconstituer une signature valide.
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+```
+
+```python Python / Flask
+import hmac, hashlib, time
+from flask import Flask, request
+
+app = Flask(__name__)
+
+@app.post('/hooks/djonanko')
+def hook():
+    # request.get_data() renvoie les octets reçus, avant tout parsing.
+    raw = request.get_data()
+
+    if not verifier(raw, request.headers.get('Djonanko-Signature'), SECRET):
+        return 'signature invalide', 401
+
+    evenement = request.get_json()
+    traiter_en_tache_de_fond(evenement)
+    return 'ok', 200
+
+
+def verifier(raw_body: bytes, header: str, secret: str, tolerance: int = 300) -> bool:
+    if not header:
+        return False
+    try:
+        parts = dict(p.strip().split('=', 1) for p in header.split(','))
+        age = abs(time.time() - int(parts['t']))
+    except (KeyError, ValueError):
+        return False
+
+    if age > tolerance:
+        return False
+
+    attendu = hmac.new(
+        secret.encode(),
+        f"{parts['t']}.".encode() + raw_body,
+        hashlib.sha256,
+    ).hexdigest()
+
+    return hmac.compare_digest(attendu, parts.get('v1', ''))
+```
+
+```php PHP
+<?php
+// php://input donne le corps brut, avant tout décodage.
+$raw = file_get_contents('php://input');
+$header = $_SERVER['HTTP_DJONANKO_SIGNATURE'] ?? '';
+
+if (!verifier($raw, $header, getenv('DJONANKO_WEBHOOK_SECRET'))) {
+    http_response_code(401);
+    exit('signature invalide');
+}
+
+$evenement = json_decode($raw, true);
+http_response_code(200);
+echo 'ok';
+
+function verifier(string $rawBody, string $header, string $secret, int $tolerance = 300): bool
+{
+    $parts = [];
+    foreach (explode(',', $header) as $segment) {
+        $pair = explode('=', trim($segment), 2);
+        if (count($pair) === 2) {
+            $parts[$pair[0]] = $pair[1];
+        }
+    }
+
+    if (!isset($parts['t'], $parts['v1'])) {
+        return false;
+    }
+    if (abs(time() - (int) $parts['t']) > $tolerance) {
+        return false;
+    }
+
+    $attendu = hash_hmac('sha256', $parts['t'] . '.' . $rawBody, $secret);
+
+    return hash_equals($attendu, $parts['v1']);
+}
+```
+</CodeGroup>
+
+## Ce que votre endpoint doit faire
+
+<Steps>
+  <Step title="Répondre 2xx en moins de 15 secondes">
+    Accusez réception, puis traitez en tâche de fond. Un traitement synchrone qui interroge votre base, envoie un e-mail et met à jour un ERP dépassera le délai, et la notification sera réessayée pour rien.
+  </Step>
+  <Step title="Être idempotent">
+    La livraison est garantie **« au moins une fois »**. Dédupliquez sur `id` (l'identifiant d'événement) avant de traiter.
+  </Step>
+  <Step title="Ne rien déduire de l'ordre d'arrivée">
+    Deux notifications d'opérations différentes peuvent arriver dans un ordre quelconque. Fiez-vous à `data.operation.status`, pas à la séquence de réception.
+  </Step>
+  <Step title="Être joignable en HTTPS">
+    Et répondre sans défi anti-robot. Un pare-feu applicatif qui challenge nos appels les fait tous échouer.
+  </Step>
+</Steps>
+
+## Si votre endpoint est indisponible
+
+Trois tentatives immédiates (2 s, 4 s, 8 s), puis des rejeux programmés :
+
+```
+5 min  →  15 min  →  1 h  →  6 h  →  24 h
+```
+
+Soit un rattrapage sur environ **31 heures**.
+
+| Code que vous renvoyez | Comportement |
+|---|---|
+| `2xx` | Livré, terminé |
+| `400`, `401`, `404`, `410`, `422` | **Abandon immédiat** : ces codes ne se résoudront pas d'eux-mêmes |
+| `403` | Réessayé — c'est typiquement un pare-feu applicatif que vous pouvez débloquer |
+| `5xx`, délai dépassé, erreur réseau | Réessayé selon le calendrier ci-dessus |
+
+<Warning>
+Si votre endpoint renvoie `404` parce qu'il n'est pas encore déployé, la notification est **abandonnée sans rejeu**. Validez toujours votre URL avec [`POST /merchants/me/webhooks/test`](/guichet/api/webhooks-test) avant d'ouvrir le trafic.
+</Warning>
+
+## Superviser et rejouer
+
+```bash
+# Notifications en échec ou abandonnées
+curl https://guichet.apidjonanko.tech/v1/merchants/me/webhooks \
+  -H "x-api-key: gk_live_…" -H "x-api-secret: gs_live_…"
+```
+
+La charge complète (`payload`) est incluse : vous pouvez la traiter directement, sans attendre un rejeu.
+
+```bash
+# Rejouer une notification précise
+curl -X POST https://guichet.apidjonanko.tech/v1/merchants/me/webhooks/<id>/replay \
+  -H "x-api-key: gk_live_…" -H "x-api-secret: gs_live_…"
+```
+
+Le rejeu renvoie la notification à l'identique, avec une **signature réhorodatée** — elle passera donc votre contrôle de fenêtre temporelle. Une notification déjà livrée ne peut pas être rejouée (`409 WEBHOOK_ALREADY_DELIVERED`).
+
+<Tip>
+Surveillez cet endpoint dans votre supervision. Une accumulation de `FAILED` ou de `ABANDONED` signifie que vous perdez des confirmations d'encaissement — ce sont vos écritures comptables.
+</Tip>
+
+## Faire tourner le secret de signature
+
+```bash
+curl -X POST https://guichet.apidjonanko.tech/v1/merchants/me/webhook-secret/rotate \
+  -H "x-api-key: gk_live_…" -H "x-api-secret: gs_live_…"
+```
+
+<Warning>
+**Coupure immédiate.** Les notifications sont signées avec le nouveau secret dès cet appel ; l'ancien n'est plus accepté. Déployez-le sans délai, sinon toutes vos vérifications échoueront.
+
+Si vous ne pouvez pas déployer instantanément, prévoyez une fenêtre où votre code accepte les deux secrets, et faites la rotation pendant cette fenêtre.
+</Warning>
+
+Le champ `webhookSecretHint` de [`GET /merchants/me`](/guichet/api/get-me) donne les huit derniers caractères du secret en vigueur : utile pour vérifier que vous détenez bien la bonne version.
+
+## Les notifications ne sont pas la source de vérité
+
+<Warning>
+Prévoyez **toujours** un rattrapage par consultation. Une tâche périodique qui interroge [`GET /operations`](/guichet/api/list-operations) sur les opérations restées non définitives au-delà de leur `expiresAt` vous protège de toute notification perdue.
+
+```bash
+curl "https://guichet.apidjonanko.tech/v1/operations?status=PENDING&limit=200" \
+  -H "x-api-key: gk_live_…" -H "x-api-secret: gs_live_…"
+```
+</Warning>

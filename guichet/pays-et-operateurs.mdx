@@ -1,0 +1,97 @@
+---
+title: "Pays et opérateurs"
+description: "Couples disponibles, devises et formats de numéro acceptés."
+icon: "globe"
+---
+
+## Couples disponibles
+
+| Pays | Code | Devise | Opérateurs |
+|---|---|---|---|
+| Côte d'Ivoire | `CI` | `XOF` | `ORANGE` · `MTN` · `MOOV` · `WAVE` · `DJAMO` |
+| Burkina Faso | `BF` | `XOF` | `ORANGE` · `MOOV` |
+| Mali | `ML` | `XOF` | `ORANGE` · `MOOV` |
+| Sénégal | `SN` | `XOF` | `ORANGE` · `WAVE` · `MTN` |
+| Togo | `TG` | `XOF` | `MOOV` |
+| Bénin | `BJ` | `XOF` | `MTN` · `MOOV` |
+| Niger | `NE` | `XOF` | `ORANGE` · `MOOV` |
+| Cameroun | `CM` | `XAF` | `MTN` · `ORANGE` |
+| Guinée | `GN` | `GNF` | `ORANGE` · `MTN` |
+
+Un couple pays / opérateur inexistant est refusé en `422 UNSUPPORTED_OPERATOR`, sans aller-retour réseau.
+
+<Note>
+La devise est déterminée par le pays : vous n'avez pas à la transmettre. Elle est renvoyée dans `operation.currency`.
+</Note>
+
+## Pays ouverts sur votre compte
+
+Tous les pays de ce tableau ne sont pas nécessairement ouverts sur **votre** compte. Par défaut, seul votre pays d'établissement l'est.
+
+```bash
+curl https://guichet.apidjonanko.tech/v1/merchants/me \
+  -H "x-api-key: gk_live_…" -H "x-api-secret: gs_live_…"
+```
+
+```json
+{ "merchant": { "country": "CI", "allowedCountries": ["CI", "BF"] } }
+```
+
+Un pays hors de cette liste est refusé en `422 UNSUPPORTED_COUNTRY`, avec `details.allowedCountries`. L'ouverture d'un nouveau corridor se demande à votre référent Djonanko.
+
+## Montants
+
+<Warning>
+**Aucune devise servie n'a de sous-unité.** Le XOF, le XAF et le GNF s'expriment en unités entières : `5000` vaut 5 000 FCFA.
+
+Tous les montants de l'API sont des **entiers**. `5000.50` est refusé en `400 VALIDATION_ERROR`. N'utilisez pas de type flottant dans votre code : un arrondi de centime produit des écarts dont l'origine devient introuvable.
+</Warning>
+
+## Formats de numéro acceptés
+
+Les trois formes suivantes sont équivalentes et normalisées en E.164 :
+
+```
+0701020304            format national
++225 07 01 02 03 04   international, espaces et signe plus
+2250701020304         indicatif sans le signe plus
+```
+
+Le numéro est renvoyé normalisé dans `operation.counterparty.phoneNumber` :
+
+```json
+{ "counterparty": { "phoneNumber": "+2250701020304", "name": "Aya Koné" } }
+```
+
+### Longueurs attendues par pays
+
+| Pays | Indicatif | Longueurs du numéro national |
+|---|---|---|
+| `CI` | 225 | 8, 9 ou 10 chiffres |
+| `BF` | 226 | 8 |
+| `ML` | 223 | 8 |
+| `SN` | 221 | 9 |
+| `TG` | 228 | 8 |
+| `BJ` | 229 | 8 ou 10 |
+| `NE` | 227 | 8 |
+| `CM` | 237 | 9 |
+| `GN` | 224 | 9 |
+
+Un numéro hors de ces longueurs est refusé en `422 INVALID_PHONE_NUMBER`, avec `details.expectedLengths`.
+
+<Tip>
+En Côte d'Ivoire, les numéros à dix chiffres commencent par `0` et ce zéro **fait partie du numéro**. Ne le retirez pas avant de nous le transmettre : envoyez-le tel que votre client vous l'a donné, nous le normalisons.
+</Tip>
+
+## Comportement du payeur selon l'opérateur
+
+| Opérateurs | Statut à la création d'un encaissement | Ce que vous faites |
+|---|---|---|
+| `ORANGE` · `WAVE` · `DJAMO` | `AWAITING_PAYER` | **Envoyez votre client sur `payerActionUrl`** |
+| `MTN` · `MOOV` | `PENDING` | Rien : votre client reçoit une demande de validation sur son téléphone |
+
+<Warning>
+Ne codez pas en dur cette répartition : testez le champ `requiresPayerAction` de la réponse. Le comportement d'un opérateur peut évoluer, et votre intégration doit suivre sans redéploiement.
+</Warning>
+
+Sur un **transfert**, aucune action n'est jamais attendue du bénéficiaire : son compte est crédité directement.

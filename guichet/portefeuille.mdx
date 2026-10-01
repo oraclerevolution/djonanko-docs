@@ -1,0 +1,185 @@
+---
+title: "Portefeuille"
+description: "Solde, part immobilisée, et lecture du relevé de mouvements."
+icon: "wallet"
+---
+
+Votre compte possède **un seul portefeuille**. Les encaissements le créditent, les transferts le débitent. Il n'y a pas de compte de collecte distinct d'un compte de décaissement : vous n'avez donc rien à provisionner en double, ni à virer d'un compte à l'autre.
+
+```bash
+curl https://guichet.apidjonanko.tech/v1/merchants/me/wallet \
+  -H "x-api-key: gk_live_…" -H "x-api-secret: gs_live_…"
+```
+
+```json
+{
+  "wallet": {
+    "currency": "XOF",
+    "balance": 500000,
+    "reserved": 20000,
+    "available": 480000,
+    "status": "ACTIVE",
+    "totalCollected": 12450000,
+    "totalDisbursed": 11800000,
+    "totalFees": 150000,
+    "updatedAt": "2026-10-01T11:04:02.000Z"
+  }
+}
+```
+
+## Les trois montants
+
+| Champ | Ce qu'il représente |
+|---|---|
+| `balance` | Le solde total que vous détenez |
+| `reserved` | La part immobilisée par vos transferts en cours |
+| `available` | `balance − reserved` — ce que vous pouvez réellement engager |
+
+<Warning>
+**C'est `available` qui détermine ce que vous pouvez engager, pas `balance`.** Un transfert dont le total dépasse `available` est refusé en `402 INSUFFICIENT_BALANCE`, même si `balance` paraît suffisant.
+</Warning>
+
+## L'immobilisation, étape par étape
+
+Prenons un portefeuille à 100 000 XOF et un transfert de 25 000 XOF avec 250 XOF de commission.
+
+<Steps>
+  <Step title="Avant la demande">
+    ```
+    balance   100 000
+    reserved        0
+    available 100 000
+    ```
+  </Step>
+  <Step title="Transfert accepté — le montant et la commission sont immobilisés">
+    ```
+    balance   100 000   ← inchangé : l'argent est encore là
+    reserved   25 250   ← mais il est engagé
+    available  74 750
+    ```
+
+    Deux écritures apparaissent au relevé : `CASHOUT_HOLD`.
+  </Step>
+  <Step title="Transfert exécuté — l'immobilisation devient un débit">
+    ```
+    balance    74 750
+    reserved        0
+    available  74 750
+    ```
+
+    Trois écritures : `CASHOUT_RELEASE`, `CASHOUT_DEBIT` (25 000), `CASHOUT_FEE` (250).
+  </Step>
+  <Step title="…ou transfert échoué — l'immobilisation est levée">
+    ```
+    balance   100 000
+    reserved        0
+    available 100 000   ← votre solde retrouve son niveau
+    ```
+
+    Une écriture : `CASHOUT_RELEASE`. Rien n'a été débité.
+  </Step>
+</Steps>
+
+<Note>
+C'est ce mécanisme qui vous empêche d'engager deux fois le même solde. Sans lui, deux transferts lancés simultanément pour la totalité de votre solde seraient tous les deux acceptés.
+</Note>
+
+Sur un **encaissement**, il n'y a pas d'immobilisation : le crédit arrive d'un coup, à la confirmation.
+
+```
+balance   100 000  →  104 925   (CASHIN_CREDIT 5 000, CASHIN_FEE 75)
+```
+
+## Statut du portefeuille
+
+| `status` | Effet |
+|---|---|
+| `ACTIVE` | Normal |
+| `FROZEN` | Aucun transfert accepté. Les encaissements en cours sont tout de même crédités, et une immobilisation en cours peut toujours être levée. |
+| `CLOSED` | Aucun mouvement |
+
+Un portefeuille `FROZEN` renvoie `403 WALLET_FROZEN` sur les transferts. Contactez votre référent Djonanko.
+
+## Relevé de mouvements
+
+```bash
+curl "https://guichet.apidjonanko.tech/v1/merchants/me/wallet/statement?limit=100" \
+  -H "x-api-key: gk_live_…" -H "x-api-secret: gs_live_…"
+```
+
+Le relevé est **en ajout seul** : une ligne posée n'est jamais modifiée. Une correction prend la forme d'une écriture inverse (`REVERSAL_CREDIT` ou `REVERSAL_DEBIT`), de sorte que l'historique reste lisible.
+
+Chaque ligne porte `balanceAfter`, le solde juste après l'écriture : vous pouvez rapprocher ligne à ligne avec votre comptabilité, sans rejouer toute la série.
+
+```json
+{
+  "total": 1842, "limit": 100, "offset": 0,
+  "items": [
+    {
+      "sequence": 1842,
+      "direction": "DEBIT",
+      "kind": "CASHOUT_FEE",
+      "amount": 250,
+      "balanceAfter": 474750,
+      "reservedAfter": 0,
+      "operationReference": "GUI-CO-20261001-4F7K2M9Q",
+      "createdAt": "2026-10-01T11:04:02.000Z"
+    }
+  ]
+}
+```
+
+<Tip>
+Triez sur **`sequence`**, pas sur `createdAt`. Plusieurs écritures d'un même mouvement partagent l'horodatage à la milliseconde près ; `sequence` est strictement croissant et donne l'ordre réel du relevé.
+</Tip>
+
+### Les natures d'écriture
+
+| `kind` | `direction` | Quand |
+|---|---|---|
+| `CASHIN_CREDIT` | `CREDIT` | Encaissement confirmé |
+| `CASHIN_FEE` | `DEBIT` | Commission sur encaissement |
+| `CASHOUT_HOLD` | `HOLD` | Transfert accepté, fonds immobilisés |
+| `CASHOUT_RELEASE` | `RELEASE` | Immobilisation levée (exécution ou échec) |
+| `CASHOUT_DEBIT` | `DEBIT` | Transfert exécuté |
+| `CASHOUT_FEE` | `DEBIT` | Commission sur transfert |
+| `REVERSAL_CREDIT` / `REVERSAL_DEBIT` | `CREDIT` / `DEBIT` | Contre-passation d'une opération réglée à tort |
+| `ADJUSTMENT_CREDIT` / `ADJUSTMENT_DEBIT` | `CREDIT` / `DEBIT` | Régularisation (approvisionnement, geste commercial, correction) |
+
+### Isoler les mouvements d'une opération
+
+```bash
+curl "https://guichet.apidjonanko.tech/v1/merchants/me/wallet/statement?operationReference=GUI-CO-20261001-4F7K2M9Q" \
+  -H "x-api-key: gk_live_…" -H "x-api-secret: gs_live_…"
+```
+
+Pratique pour un litige : vous obtenez les trois ou quatre écritures d'un transfert, dans l'ordre, avec les soldes intermédiaires.
+
+## Commission
+
+La commission est **figée à la création de l'opération** et visible dans `operation.fees`. Une renégociation tarifaire ne modifie donc pas rétroactivement des opérations déjà passées.
+
+Votre barème est consultable à tout moment :
+
+```bash
+curl https://guichet.apidjonanko.tech/v1/merchants/me \
+  -H "x-api-key: gk_live_…" -H "x-api-secret: gs_live_…"
+```
+
+```json
+{
+  "merchant": {
+    "pricing": {
+      "cashinFeeBps": 150, "cashinFeeFlat": 0,
+      "cashoutFeeBps": 100, "cashoutFeeFlat": 0
+    },
+    "limits": {
+      "minCashinAmount": 100, "maxCashinAmount": 2000000,
+      "minCashoutAmount": 100, "maxCashoutAmount": 2000000,
+      "dailyCashoutLimit": 0
+    }
+  }
+}
+```
+
+`Bps` = points de base : `150` vaut 1,5 %. La commission est `montant × bps / 10 000 + flat`, arrondie au plus proche. `dailyCashoutLimit` à `0` signifie qu'aucun plafond glissant sur 24 h n'est appliqué.

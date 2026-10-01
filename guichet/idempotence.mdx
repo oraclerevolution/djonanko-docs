@@ -1,0 +1,130 @@
+---
+title: "Idempotence"
+description: "Ne jamais encaisser ni décaisser deux fois, même en cas de rejeu réseau."
+icon: "fingerprint"
+---
+
+L'en-tête `Idempotency-Key` est **obligatoire** sur [`POST /cashin`](/guichet/api/cashin) et [`POST /cashout`](/guichet/api/cashout).
+
+```
+Idempotency-Key: cmd-184-tentative-1
+```
+
+C'est une contrainte assumée, au prix d'un peu de friction. Sans elle, un délai réseau suivi d'un rejeu de votre côté produirait deux opérations, et rien dans la requête ne permettrait de distinguer un rejeu d'une seconde opération légitime portant les mêmes montants.
+
+## Une clé par intention, pas par requête HTTP
+
+Si votre appel échoue sur un délai réseau et que vous réessayez, **réutilisez la même clé** : Djonanko renverra la réponse initiale au lieu de créer une seconde opération.
+
+<Warning>
+Une clé constante — `"paiement"`, `"transfert"` — ne protège rien et fera échouer votre deuxième opération en `409`. **Dérivez-la de votre identifiant de commande** : `cmd-184`, `paie-2026-03-0042`.
+</Warning>
+
+## Les quatre cas
+
+| Situation | Réponse |
+|---|---|
+| Clé inconnue | L'opération est créée — `201` |
+| Même clé, même corps, traitement terminé | La réponse initiale est rejouée — `200` |
+| Même clé, même corps, traitement encore en cours | `409 IDEMPOTENT_REQUEST_IN_FLIGHT` — réessayez dans quelques secondes |
+| Même clé, **corps différent** | `409 IDEMPOTENCY_KEY_REUSED` — erreur d'intégration de votre côté |
+
+Le dernier cas mérite une explication : réutiliser une clé avec un corps différent n'est pas un rejeu, c'est presque toujours une clé constante. Rejouer l'ancienne réponse vous ferait croire que votre nouvelle opération a été acceptée alors qu'elle n'a jamais été soumise.
+
+<Note>
+Les clés sont conservées **24 heures**. Au-delà, la même clé est traitée comme nouvelle. C'est largement suffisant pour couvrir une reprise après incident ou une file de messages qui se vide.
+</Note>
+
+## Quand réessayer, et avec quelle clé
+
+```
+┌─ 2xx ──────────── succès, ne réessayez pas
+│
+├─ 400, 402, 403, 422 ── refus concluant : corrigez la requête,
+│                        ne réessayez pas tel quel
+│
+├─ 409 IDEMPOTENT_REQUEST_IN_FLIGHT ── même clé, dans quelques secondes
+│
+├─ 409 IDEMPOTENCY_KEY_REUSED ──────── bug : votre clé n'est pas unique
+│
+├─ 429 ───────────────────── même clé, après une pause
+│
+└─ 503, 504 ─────────────── même clé : l'issue est inconnue,
+                            l'opération a peut-être été enregistrée
+```
+
+<Warning>
+Sur un `503` ou un `504`, **réessayez impérativement avec la même clé**. L'opération a peut-être été enregistrée avant la coupure : une nouvelle clé en créerait une seconde.
+</Warning>
+
+## `externalReference` : la seconde ceinture
+
+En complément de l'idempotence par en-tête, `externalReference` est votre identifiant d'opération. Il est **unique sur votre compte** :
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "DUPLICATE_EXTERNAL_REFERENCE",
+    "message": "Cette référence externe a déjà été utilisée pour une autre opération.",
+    "details": {
+      "externalReference": "CMD-2026-00184",
+      "existingOperation": "GUI-CI-20261001-7K2M9QX4",
+      "existingStatus": "SUCCEEDED"
+    }
+  }
+}
+```
+
+Le `details` vous donne l'opération existante et son statut : vous pouvez décider quoi faire sans appel supplémentaire.
+
+<Tip>
+Les deux mécanismes se complètent et couvrent des fautes différentes.
+
+- `Idempotency-Key` protège contre le **rejeu technique** : même intention, deux requêtes.
+- `externalReference` protège contre le **double déclenchement métier** : deux intentions créées par erreur pour la même commande, par exemple par deux consommateurs d'une file de messages.
+
+Renseignez les deux.
+</Tip>
+
+## Exemple avec reprise
+
+```javascript
+// La clé est dérivée de la commande : stable à travers les tentatives,
+// unique entre les commandes.
+const idempotencyKey = `cashin-${order.id}`;
+
+async function encaisser(order, tentative = 1) {
+  const response = await fetch('https://guichet.apidjonanko.tech/v1/cashin', {
+    method: 'POST',
+    headers: {
+      'x-api-key': process.env.DJONANKO_GUICHET_KEY,
+      'x-api-secret': process.env.DJONANKO_GUICHET_SECRET,
+      'Idempotency-Key': idempotencyKey,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      amount: order.amount,
+      country: 'CI',
+      operator: order.operator,
+      payerPhone: order.phone,
+      externalReference: order.id,
+    }),
+  });
+
+  // 200 comme 201 sont des succès : 200 signifie simplement que cette clé
+  // avait déjà été traitée et que la réponse initiale est rejouée.
+  if (response.ok) return response.json();
+
+  const body = await response.json();
+
+  // Issue inconnue : on réessaie, avec la même clé.
+  const aRejouer = [409, 429, 503, 504].includes(response.status);
+  if (aRejouer && tentative < 4) {
+    await new Promise((r) => setTimeout(r, 2000 * 2 ** (tentative - 1)));
+    return encaisser(order, tentative + 1);
+  }
+
+  throw new Error(`${body.error.code} — requestId ${body.requestId}`);
+}
+```

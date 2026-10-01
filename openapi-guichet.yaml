@@ -1,0 +1,2134 @@
+openapi: 3.1.0
+info:
+  title: Djonanko Guichet API
+  version: "1.0.0"
+  description: |
+    API d'agrégation mobile money de Djonanko. Elle permet à une entreprise
+    partenaire d'**encaisser** (`cash-in`) et de **transférer** (`cash-out`) sur les
+    réseaux mobile money d'Afrique de l'Ouest et du Centre, directement depuis ses
+    propres serveurs.
+
+    Contrairement à l'API Djonanko Pay, le Guichet ne passe **ni par un lien de
+    paiement ni par une page hébergée** : vous appelez l'API, le client est sollicité
+    sur son téléphone, et vous recevez l'issue par notification signée.
+
+    ### Ce qu'il faut retenir avant de commencer
+
+    - **Authentification** : `x-api-key` + `x-api-secret` sur chaque appel.
+    - **Montants entiers** : le XOF, le XAF et le GNF n'ont pas de sous-unité.
+      `5000` vaut 5 000 FCFA. Aucune décimale n'est acceptée.
+    - **Idempotence obligatoire** : l'en-tête `Idempotency-Key` est exigé sur
+      `POST /cashin` et `POST /cashout`.
+    - **Un portefeuille unique** par compte : les encaissements le créditent, les
+      transferts le débitent.
+    - **Notifications signées** : vérifiez l'en-tête `Djonanko-Signature` avant de
+      traiter.
+
+    Toutes les réponses sont en JSON. Chaque réponse porte un en-tête
+    `x-request-id` à citer dans vos demandes de support.
+  contact:
+    name: Support Djonanko
+    url: https://www.djonanko.ci/#contact
+
+servers:
+  - url: https://guichet.apidjonanko.tech/v1
+    description: Production
+
+tags:
+  - name: Encaissement
+    description: Débiter un compte mobile money vers votre portefeuille.
+  - name: Transfert
+    description: Créditer un compte mobile money depuis votre portefeuille.
+  - name: Opérations
+    description: Consulter l'état et l'historique de vos opérations.
+  - name: Portefeuille
+    description: Solde et relevé des mouvements.
+  - name: Compte
+    description: Création de compte, profil, clés d'API.
+  - name: Sécurité
+    description: Adresses IP autorisées.
+  - name: Notifications
+    description: Configuration, supervision et rejeu des notifications sortantes.
+
+security:
+  - ApiKey: []
+    ApiSecret: []
+
+components:
+  securitySchemes:
+    ApiKey:
+      type: apiKey
+      in: header
+      name: x-api-key
+      description: Votre clé publique, préfixée `gk_live_` (ou `gk_test_`).
+    ApiSecret:
+      type: apiKey
+      in: header
+      name: x-api-secret
+      description: >
+        Votre secret, préfixé `gs_live_` (ou `gs_test_`). Affiché une seule fois, à
+        l'émission de la clé. Il ne doit jamais quitter vos serveurs.
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: >
+        Clé unique de votre côté, propre à cette intention d'opération. Un second
+        appel portant la même clé et le même corps renvoie la réponse initiale sans
+        rien réexécuter. 120 caractères maximum, conservée 24 heures.
+      schema:
+        type: string
+        maxLength: 120
+        example: cmd-184-tentative-1
+    RequestId:
+      name: x-request-id
+      in: header
+      required: false
+      description: >
+        Identifiant de corrélation de votre choix. Repris tel quel dans la réponse et
+        dans nos journaux. À défaut, nous en générons un.
+      schema:
+        type: string
+        maxLength: 200
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Nombre maximum d'éléments renvoyés.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    Offset:
+      name: offset
+      in: query
+      required: false
+      description: Nombre d'éléments à ignorer avant de commencer la page.
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+
+  schemas:
+    Country:
+      type: string
+      description: Pays, en ISO 3166-1 alpha-2.
+      enum: [CI, BF, ML, SN, TG, BJ, NE, CM, GN]
+      example: CI
+
+    Currency:
+      type: string
+      description: >
+        Devise. Aucune n'a de sous-unité : les montants sont toujours des entiers.
+      enum: [XOF, XAF, GNF]
+      example: XOF
+
+    Operator:
+      type: string
+      description: >
+        Opérateur mobile money. Tous ne sont pas disponibles dans tous les pays —
+        voir le guide « Pays et opérateurs ».
+      enum: [ORANGE, MTN, MOOV, WAVE, DJAMO]
+      example: ORANGE
+
+    OperationType:
+      type: string
+      enum: [CASHIN, CASHOUT]
+
+    OperationStatus:
+      type: string
+      description: |
+        État d'une opération.
+
+        - `CREATED` — enregistrée, pas encore soumise
+        - `PENDING` — soumise, en attente d'issue
+        - `AWAITING_PAYER` — encaissement : le payeur doit agir
+        - `SUCCEEDED` — aboutie *(définitif)*
+        - `FAILED` — refusée *(définitif)*
+        - `EXPIRED` — aucune issue dans le délai *(définitif)*
+        - `CANCELLED` — annulée avant exécution *(définitif)*
+        - `REVERSED` — contre-passée *(définitif)*
+
+        Une opération réussie ne repasse jamais en échec. Le seul mouvement possible
+        depuis `SUCCEEDED` est `REVERSED`.
+      enum:
+        [
+          CREATED,
+          PENDING,
+          AWAITING_PAYER,
+          SUCCEEDED,
+          FAILED,
+          EXPIRED,
+          CANCELLED,
+          REVERSED,
+        ]
+
+    OperationFailureCode:
+      type: string
+      description: |
+        Cause de l'échec d'une opération.
+
+        - `OPERATOR_INSUFFICIENT_FUNDS` — solde mobile money insuffisant
+        - `OPERATOR_ACCOUNT_UNKNOWN` — compte inconnu ou inactif
+        - `OPERATOR_ACCOUNT_LIMIT_REACHED` — plafond du compte atteint
+        - `PAYER_CANCELLED` — le payeur a refusé
+        - `OPERATOR_TIMEOUT` — l'opérateur n'a pas répondu
+        - `OPERATOR_REFUSED` — refus sans motif précis
+        - `UPSTREAM_UNAVAILABLE` — indisponibilité temporaire
+        - `SETTLEMENT_ACCOUNT_UNAVAILABLE` — indisponibilité temporaire côté Djonanko
+        - `INTERNAL_ERROR` — erreur interne
+      enum:
+        [
+          OPERATOR_INSUFFICIENT_FUNDS,
+          OPERATOR_ACCOUNT_UNKNOWN,
+          OPERATOR_ACCOUNT_LIMIT_REACHED,
+          PAYER_CANCELLED,
+          OPERATOR_TIMEOUT,
+          OPERATOR_REFUSED,
+          UPSTREAM_UNAVAILABLE,
+          SETTLEMENT_ACCOUNT_UNAVAILABLE,
+          INTERNAL_ERROR,
+        ]
+
+    Counterparty:
+      type: object
+      description: Le payeur sur un encaissement, le bénéficiaire sur un transfert.
+      properties:
+        phoneNumber:
+          type: string
+          description: Numéro normalisé au format E.164.
+          example: "+2250701020304"
+        name:
+          type: [string, "null"]
+          example: Aya Koné
+
+    Operation:
+      type: object
+      description: >
+        Représentation d'une opération. C'est la forme renvoyée par les endpoints de
+        création, de consultation, et dans le corps des notifications.
+      properties:
+        reference:
+          type: string
+          description: >
+            Référence Djonanko de l'opération. C'est l'identifiant à conserver et à
+            citer. Préfixée `GUI-CI-` pour un encaissement, `GUI-CO-` pour un transfert.
+          example: GUI-CI-20261001-7K2M9QX4
+        type:
+          $ref: "#/components/schemas/OperationType"
+        status:
+          $ref: "#/components/schemas/OperationStatus"
+        amount:
+          type: integer
+          description: Montant demandé, en unités entières.
+          example: 5000
+        fees:
+          type: integer
+          description: Commission Djonanko, figée à la création de l'opération.
+          example: 75
+        netAmount:
+          type: integer
+          description: >
+            Impact sur votre portefeuille. Sur un encaissement, ce qui vous est
+            crédité (`amount − fees`). Sur un transfert, ce qui vous est prélevé
+            (`amount + fees`).
+          example: 4925
+        currency:
+          $ref: "#/components/schemas/Currency"
+        country:
+          $ref: "#/components/schemas/Country"
+        operator:
+          $ref: "#/components/schemas/Operator"
+        counterparty:
+          $ref: "#/components/schemas/Counterparty"
+        externalReference:
+          type: [string, "null"]
+          description: Votre propre référence, telle que vous l'avez transmise.
+          example: CMD-2026-00184
+        description:
+          type: [string, "null"]
+          example: Commande 184
+        payerActionUrl:
+          type: [string, "null"]
+          description: >
+            URL sur laquelle envoyer le payeur. Renseignée uniquement quand
+            l'opérateur exige une redirection. `null` sur un transfert.
+          example: https://pay.example.com/s/abc123
+        requiresPayerAction:
+          type: boolean
+          description: >
+            `true` si l'encaissement attend une action du payeur sur `payerActionUrl`.
+          example: true
+        failure:
+          type: [object, "null"]
+          description: Renseigné uniquement si l'opération a échoué.
+          properties:
+            code:
+              $ref: "#/components/schemas/OperationFailureCode"
+            message:
+              type: string
+              example: Le solde du compte mobile money du payeur est insuffisant.
+        metadata:
+          type: [object, "null"]
+          description: Vos données libres, restituées telles quelles.
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: [string, "null"]
+          format: date-time
+          description: Horodatage du passage à un état définitif.
+        expiresAt:
+          type: [string, "null"]
+          format: date-time
+          description: >
+            Au-delà, une opération sans issue passe en `EXPIRED`. 30 minutes pour un
+            encaissement, 6 heures pour un transfert.
+
+    OperationEnvelope:
+      type: object
+      properties:
+        operation:
+          $ref: "#/components/schemas/Operation"
+
+    Wallet:
+      type: object
+      properties:
+        walletId:
+          type: string
+          format: uuid
+        merchantId:
+          type: string
+          format: uuid
+        currency:
+          $ref: "#/components/schemas/Currency"
+        balance:
+          type: integer
+          description: Solde total détenu.
+          example: 500000
+        reserved:
+          type: integer
+          description: Part immobilisée par les transferts en cours.
+          example: 20000
+        available:
+          type: integer
+          description: >
+            `balance − reserved` : ce que vous pouvez réellement engager dans un
+            nouveau transfert.
+          example: 480000
+        status:
+          type: string
+          enum: [ACTIVE, FROZEN, CLOSED]
+        totalCollected:
+          type: integer
+          description: Cumul encaissé depuis l'ouverture du compte.
+        totalDisbursed:
+          type: integer
+          description: Cumul transféré depuis l'ouverture du compte.
+        totalFees:
+          type: integer
+          description: Cumul des commissions prélevées.
+        updatedAt:
+          type: string
+          format: date-time
+
+    LedgerEntry:
+      type: object
+      description: >
+        Ligne de relevé. Le relevé est en ajout seul : une ligne posée n'est jamais
+        modifiée. Une correction prend la forme d'une écriture inverse.
+      properties:
+        id:
+          type: string
+          format: uuid
+        sequence:
+          type: integer
+          description: >
+            Rang de l'écriture dans votre relevé. Strictement croissant : c'est le
+            bon critère de tri, pas l'horodatage.
+          example: 1842
+        direction:
+          type: string
+          description: |
+            - `CREDIT` — le solde augmente
+            - `DEBIT` — le solde diminue
+            - `HOLD` — immobilisation : le solde ne bouge pas, le disponible diminue
+            - `RELEASE` — levée d'immobilisation
+          enum: [CREDIT, DEBIT, HOLD, RELEASE]
+        kind:
+          type: string
+          description: |
+            - `CASHIN_CREDIT` — encaissement confirmé
+            - `CASHIN_FEE` — commission sur encaissement
+            - `CASHOUT_HOLD` — immobilisation à la demande de transfert
+            - `CASHOUT_DEBIT` — transfert exécuté
+            - `CASHOUT_FEE` — commission sur transfert
+            - `CASHOUT_RELEASE` — levée d'immobilisation
+            - `REVERSAL_CREDIT` / `REVERSAL_DEBIT` — contre-passation
+            - `ADJUSTMENT_CREDIT` / `ADJUSTMENT_DEBIT` — régularisation
+          enum:
+            [
+              CASHIN_CREDIT,
+              CASHIN_FEE,
+              CASHOUT_HOLD,
+              CASHOUT_DEBIT,
+              CASHOUT_FEE,
+              CASHOUT_RELEASE,
+              REVERSAL_CREDIT,
+              REVERSAL_DEBIT,
+              ADJUSTMENT_CREDIT,
+              ADJUSTMENT_DEBIT,
+            ]
+        amount:
+          type: integer
+          description: Toujours positif. Le sens est porté par `direction`.
+          example: 4925
+        currency:
+          $ref: "#/components/schemas/Currency"
+        balanceAfter:
+          type: integer
+          description: Solde après cette écriture — permet un rapprochement ligne à ligne.
+          example: 504925
+        reservedAfter:
+          type: integer
+          example: 20000
+        operationReference:
+          type: [string, "null"]
+          example: GUI-CI-20261001-7K2M9QX4
+        description:
+          type: [string, "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    Merchant:
+      type: object
+      properties:
+        reference:
+          type: string
+          description: Référence publique de votre compte.
+          example: PRT-4F7K2M9Q
+        name:
+          type: string
+          example: Wakati Technologies
+        legalName:
+          type: [string, "null"]
+        email:
+          type: string
+          format: email
+        phoneNumber:
+          type: [string, "null"]
+        country:
+          $ref: "#/components/schemas/Country"
+        status:
+          type: string
+          description: |
+            - `PENDING` — créé, en attente d'activation : vous pouvez consulter et
+              configurer, mais pas encore opérer
+            - `ACTIVE` — opérationnel
+            - `SUSPENDED` — bloqué temporairement
+            - `CLOSED` — clôturé
+          enum: [PENDING, ACTIVE, SUSPENDED, CLOSED]
+        allowedCountries:
+          type: array
+          description: Pays ouverts sur votre compte.
+          items:
+            $ref: "#/components/schemas/Country"
+        webhookUrl:
+          type: [string, "null"]
+        webhookSecretHint:
+          type: [string, "null"]
+          description: >
+            Huit derniers caractères de votre secret de signature, pour vérifier que
+            vous détenez bien la version courante après une rotation.
+          example: 9f1c2b7e
+        pricing:
+          type: object
+          properties:
+            cashinFeeBps:
+              type: integer
+              description: Commission d'encaissement en points de base (150 = 1,5 %).
+              example: 150
+            cashinFeeFlat:
+              type: integer
+              description: Part fixe de la commission d'encaissement.
+              example: 0
+            cashoutFeeBps:
+              type: integer
+              example: 100
+            cashoutFeeFlat:
+              type: integer
+              example: 0
+        limits:
+          type: object
+          properties:
+            minCashinAmount:
+              type: integer
+              example: 100
+            maxCashinAmount:
+              type: integer
+              example: 2000000
+            minCashoutAmount:
+              type: integer
+              example: 100
+            maxCashoutAmount:
+              type: integer
+              example: 2000000
+            dailyCashoutLimit:
+              type: integer
+              description: Plafond glissant de transfert sur 24 h. `0` = pas de plafond.
+              example: 0
+        metadata:
+          type: [object, "null"]
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      description: Forme de toutes les réponses d'erreur.
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: >
+                Code stable. **Branchez votre logique dessus**, jamais sur `message`,
+                qui peut être reformulé.
+              example: INSUFFICIENT_BALANCE
+            message:
+              type: string
+              example: Le solde disponible de votre portefeuille est insuffisant.
+            details:
+              type: [object, "null"]
+              description: Contexte complémentaire, variable selon le code.
+              additionalProperties: true
+        requestId:
+          type: string
+          description: Également renvoyé dans l'en-tête `x-request-id`.
+          example: 9f1c2b7e-4a5d-4c8f-b0a1-e2d3c4b5a697
+        timestamp:
+          type: string
+          format: date-time
+
+  responses:
+    BadRequest:
+      description: Requête invalide (`VALIDATION_ERROR`, `IDEMPOTENCY_KEY_REQUIRED`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            success: false
+            error:
+              code: VALIDATION_ERROR
+              message: La requête est invalide.
+              details:
+                fields: ["amount must be an integer number"]
+            requestId: 9f1c2b7e-4a5d-4c8f-b0a1-e2d3c4b5a697
+            timestamp: "2026-10-01T10:12:04.000Z"
+    Unauthorized:
+      description: Identifiants absents ou invalides.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            success: false
+            error:
+              code: INVALID_CREDENTIALS
+              message: Identifiants API invalides.
+            requestId: 9f1c2b7e-4a5d-4c8f-b0a1-e2d3c4b5a697
+            timestamp: "2026-10-01T10:12:04.000Z"
+    Forbidden:
+      description: >
+        Compte non activé ou suspendu (`ACCOUNT_SUSPENDED`), adresse IP non déclarée
+        (`IP_NOT_ALLOWED`), portefeuille gelé (`WALLET_FROZEN`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Ressource introuvable.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: >
+        Clé d'idempotence réutilisée avec un corps différent
+        (`IDEMPOTENCY_KEY_REUSED`), requête identique en cours
+        (`IDEMPOTENT_REQUEST_IN_FLIGHT`), ou référence externe déjà prise
+        (`DUPLICATE_EXTERNAL_REFERENCE`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    PaymentRequired:
+      description: Solde disponible insuffisant.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            success: false
+            error:
+              code: INSUFFICIENT_BALANCE
+              message: Le solde disponible de votre portefeuille est insuffisant.
+              details:
+                available: 12000
+                required: 25250
+                currency: XOF
+            requestId: 9f1c2b7e-4a5d-4c8f-b0a1-e2d3c4b5a697
+            timestamp: "2026-10-01T10:12:04.000Z"
+    Unprocessable:
+      description: >
+        Montant hors bornes, couple pays / opérateur indisponible, ou numéro invalide.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    TooManyRequests:
+      description: Débit dépassé.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unavailable:
+      description: >
+        Indisponibilité temporaire. **Réessayez avec la même clé d'idempotence** :
+        l'opération n'a peut-être pas été enregistrée.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+webhooks:
+  operationNotification:
+    post:
+      summary: Notification d'opération
+      operationId: operationNotification
+      tags: [Notifications]
+      security: []
+      description: |
+        Requête que **Djonanko envoie à votre serveur** dès qu'une opération atteint un
+        état définitif, ou qu'un encaissement attend une action du payeur.
+
+        L'URL est celle configurée sur votre compte (`webhookUrl`), ou celle fournie
+        dans `callbackUrl` à la création de l'opération.
+
+        ### Vérifier la signature
+
+        Deux en-têtes accompagnent chaque notification :
+
+        ```
+        Djonanko-Signature: t=1759226027,v1=3a7f…
+        Djonanko-Event:     cashin.succeeded
+        ```
+
+        `v1` est un HMAC-SHA256 de la chaîne `<t>.<corps brut>`, calculé avec votre
+        secret de signature. **Vérifiez-le sur le corps brut**, avant toute
+        désérialisation : recalculer après avoir reparsé le JSON produit une chaîne
+        différente et la vérification échouerait systématiquement.
+
+        Comparez aussi `t` à l'heure courante et refusez au-delà de 5 minutes : c'est
+        ce qui rend une notification capturée inexploitable.
+
+        ### Ce que votre endpoint doit faire
+
+        1. **Répondre 2xx en moins de 15 secondes.** Accusez réception, traitez ensuite
+           en tâche de fond.
+        2. **Être idempotent.** La livraison est garantie « au moins une fois » :
+           dédupliquez sur `id`.
+        3. **Être joignable en HTTPS.**
+
+        ### En cas d'indisponibilité
+
+        3 tentatives immédiates (2 s, 4 s, 8 s), puis des rejeux à 5 min, 15 min, 1 h,
+        6 h et 24 h — un rattrapage sur environ 31 heures.
+
+        Les codes `400`, `401`, `404`, `410` et `422` font abandonner immédiatement :
+        ils ne se résoudront pas d'eux-mêmes. Un `403` est au contraire réessayé,
+        parce que c'est typiquement un pare-feu applicatif devant votre serveur, que
+        vous pouvez débloquer.
+
+        <Warning>
+        Les notifications ne sont pas la source de vérité. Si l'une vous échappe,
+        `GET /operations/{reference}` donne toujours l'état réel. N'attendez jamais
+        une notification indéfiniment : interrogez.
+        </Warning>
+      parameters:
+        - name: Djonanko-Signature
+          in: header
+          required: true
+          description: "`t=<horodatage unix>,v1=<hmac-sha256 hexadécimal>`"
+          schema:
+            type: string
+            example: t=1759226027,v1=3a7f9c1e8b2d4f6a0c5e7b9d1f3a5c7e9b1d3f5a7c9e1b3d5f7a9c1e3b5d7f9a
+        - name: Djonanko-Event
+          in: header
+          required: true
+          description: Type de l'événement, pour router sans lire le corps.
+          schema:
+            type: string
+            example: cashin.succeeded
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+                  description: Identifiant de l'événement. Utilisez-le pour dédupliquer.
+                  example: evt_9f1c2b7e4a5d4c8fb0a1e2d3c4b5a697
+                type:
+                  type: string
+                  description: |
+                    - `cashin.awaiting_payer` — le payeur doit agir
+                    - `cashin.succeeded` — encaissement confirmé, portefeuille crédité
+                    - `cashin.failed` — encaissement refusé
+                    - `cashin.expired` — aucune issue dans le délai
+                    - `cashout.succeeded` — bénéficiaire crédité
+                    - `cashout.failed` — transfert refusé, immobilisation levée
+                    - `cashout.expired` — aucune issue, immobilisation levée
+                    - `operation.reversed` — opération contre-passée
+                    - `wallet.adjusted` — régularisation de portefeuille
+                    - `ping` — notification de test
+                  enum:
+                    [
+                      cashin.awaiting_payer,
+                      cashin.succeeded,
+                      cashin.failed,
+                      cashin.expired,
+                      cashout.succeeded,
+                      cashout.failed,
+                      cashout.expired,
+                      operation.reversed,
+                      wallet.adjusted,
+                      ping,
+                    ]
+                createdAt:
+                  type: string
+                  format: date-time
+                merchantReference:
+                  type: string
+                  example: PRT-4F7K2M9Q
+                data:
+                  type: object
+                  description: >
+                    Contenu de l'événement. Pour tous les types liés à une opération,
+                    contient `operation`, dans la même forme que les réponses d'API.
+                  properties:
+                    operation:
+                      $ref: "#/components/schemas/Operation"
+            examples:
+              encaissementReussi:
+                summary: Encaissement confirmé
+                value:
+                  id: evt_9f1c2b7e4a5d4c8fb0a1e2d3c4b5a697
+                  type: cashin.succeeded
+                  createdAt: "2026-10-01T10:13:47.512Z"
+                  merchantReference: PRT-4F7K2M9Q
+                  data:
+                    operation:
+                      reference: GUI-CI-20261001-7K2M9QX4
+                      type: CASHIN
+                      status: SUCCEEDED
+                      amount: 5000
+                      fees: 75
+                      netAmount: 4925
+                      currency: XOF
+                      country: CI
+                      operator: ORANGE
+                      counterparty:
+                        phoneNumber: "+2250701020304"
+                        name: Aya Koné
+                      externalReference: CMD-2026-00184
+                      description: Commande 184
+                      payerActionUrl: null
+                      requiresPayerAction: false
+                      failure: null
+                      metadata:
+                        cartId: c_8891
+                      createdAt: "2026-10-01T10:12:04.000Z"
+                      updatedAt: "2026-10-01T10:13:47.000Z"
+                      completedAt: "2026-10-01T10:13:47.000Z"
+                      expiresAt: "2026-10-01T10:42:04.000Z"
+              transfertEchoue:
+                summary: Transfert refusé — immobilisation levée
+                value:
+                  id: evt_4f7k2m9q1a2b3c4d5e6f7a8b9c0d1e2f
+                  type: cashout.failed
+                  createdAt: "2026-10-01T11:02:19.004Z"
+                  merchantReference: PRT-4F7K2M9Q
+                  data:
+                    operation:
+                      reference: GUI-CO-20261001-4F7K2M9Q
+                      type: CASHOUT
+                      status: FAILED
+                      amount: 25000
+                      fees: 250
+                      netAmount: 25250
+                      currency: XOF
+                      country: CI
+                      operator: WAVE
+                      counterparty:
+                        phoneNumber: "+2250501020304"
+                        name: Koffi Yao
+                      externalReference: PAIE-2026-03-0042
+                      description: Salaire mars 2026
+                      payerActionUrl: null
+                      requiresPayerAction: false
+                      failure:
+                        code: OPERATOR_ACCOUNT_UNKNOWN
+                        message: Ce compte mobile money est inconnu ou inactif chez l'opérateur.
+                      metadata: null
+                      createdAt: "2026-10-01T11:01:50.000Z"
+                      updatedAt: "2026-10-01T11:02:19.000Z"
+                      completedAt: "2026-10-01T11:02:19.000Z"
+                      expiresAt: "2026-10-01T17:01:50.000Z"
+      responses:
+        "200":
+          description: Notification acceptée. Tout code 2xx convient.
+
+paths:
+  /cashin:
+    post:
+      summary: Encaisser un paiement
+      operationId: createCashin
+      tags: [Encaissement]
+      description: |
+        Débite le compte mobile money du payeur et crédite votre portefeuille du
+        montant net une fois l'encaissement confirmé.
+
+        Deux comportements selon l'opérateur :
+
+        | Opérateurs | Statut renvoyé | Ce que vous avez à faire |
+        |---|---|---|
+        | MTN, Moov | `PENDING` | Rien. Le payeur reçoit une demande de validation sur son téléphone. Attendez la notification. |
+        | Orange, Wave, Djamo | `AWAITING_PAYER` | **Envoyer votre client sur `payerActionUrl`.** Sans cela l'encaissement n'aboutira jamais. |
+
+        L'issue définitive arrive par notification (`cashin.succeeded` /
+        `cashin.failed`). Une opération sans issue au bout de 30 minutes passe en
+        `EXPIRED`.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/RequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, country, operator, payerPhone]
+              properties:
+                amount:
+                  type: integer
+                  minimum: 1
+                  description: >
+                    Montant à encaisser, en unités entières. Aucune décimale.
+                  example: 5000
+                country:
+                  $ref: "#/components/schemas/Country"
+                operator:
+                  $ref: "#/components/schemas/Operator"
+                payerPhone:
+                  type: string
+                  maxLength: 24
+                  description: >
+                    Numéro du payeur. Format national ou international, avec ou sans
+                    espaces — il est normalisé en E.164.
+                  example: "0701020304"
+                payerName:
+                  type: string
+                  maxLength: 160
+                  example: Aya Koné
+                externalReference:
+                  type: string
+                  maxLength: 120
+                  description: >
+                    Votre identifiant d'opération. Unique sur votre compte : une
+                    seconde opération portant la même valeur est refusée en `409`.
+                    C'est votre garde-fou contre le double encaissement.
+                  example: CMD-2026-00184
+                description:
+                  type: string
+                  maxLength: 200
+                  example: Commande 184
+                callbackUrl:
+                  type: string
+                  format: uri
+                  description: >
+                    URL de notification propre à cette opération. À défaut, celle de
+                    votre compte est utilisée. HTTPS obligatoire.
+                successUrl:
+                  type: string
+                  format: uri
+                  description: >
+                    Où renvoyer le payeur après un paiement réussi, quand une
+                    redirection est nécessaire.
+                errorUrl:
+                  type: string
+                  format: uri
+                  description: Où renvoyer le payeur en cas d'échec.
+                metadata:
+                  type: object
+                  additionalProperties: true
+                  description: >
+                    Données libres, restituées telles quelles dans les notifications.
+                  example:
+                    cartId: c_8891
+            examples:
+              pushUssd:
+                summary: Orange Côte d'Ivoire
+                value:
+                  amount: 5000
+                  country: CI
+                  operator: ORANGE
+                  payerPhone: "0701020304"
+                  payerName: Aya Koné
+                  externalReference: CMD-2026-00184
+                  description: Commande 184
+                  metadata:
+                    cartId: c_8891
+              minimal:
+                summary: Champs obligatoires seulement
+                value:
+                  amount: 1000
+                  country: CI
+                  operator: MTN
+                  payerPhone: "0501020304"
+      responses:
+        "201":
+          description: Opération créée.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperationEnvelope"
+              examples:
+                attenteDuPayeur:
+                  summary: Redirection nécessaire
+                  value:
+                    operation:
+                      reference: GUI-CI-20261001-7K2M9QX4
+                      type: CASHIN
+                      status: AWAITING_PAYER
+                      amount: 5000
+                      fees: 75
+                      netAmount: 4925
+                      currency: XOF
+                      country: CI
+                      operator: ORANGE
+                      counterparty:
+                        phoneNumber: "+2250701020304"
+                        name: Aya Koné
+                      externalReference: CMD-2026-00184
+                      description: Commande 184
+                      payerActionUrl: https://pay.example.com/s/abc123
+                      requiresPayerAction: true
+                      failure: null
+                      metadata:
+                        cartId: c_8891
+                      createdAt: "2026-10-01T10:12:04.000Z"
+                      updatedAt: "2026-10-01T10:12:05.000Z"
+                      completedAt: null
+                      expiresAt: "2026-10-01T10:42:04.000Z"
+                enAttente:
+                  summary: Validation sur le téléphone du payeur
+                  value:
+                    operation:
+                      reference: GUI-CI-20261001-9P3R5T7V
+                      type: CASHIN
+                      status: PENDING
+                      amount: 1000
+                      fees: 15
+                      netAmount: 985
+                      currency: XOF
+                      country: CI
+                      operator: MTN
+                      counterparty:
+                        phoneNumber: "+2250501020304"
+                        name: null
+                      externalReference: null
+                      description: null
+                      payerActionUrl: null
+                      requiresPayerAction: false
+                      failure: null
+                      metadata: null
+                      createdAt: "2026-10-01T10:14:11.000Z"
+                      updatedAt: "2026-10-01T10:14:12.000Z"
+                      completedAt: null
+                      expiresAt: "2026-10-01T10:44:11.000Z"
+        "200":
+          description: >
+            Rejeu idempotent : cette `Idempotency-Key` a déjà été traitée, la réponse
+            initiale est renvoyée sans rien réexécuter.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperationEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /cashout/quote:
+    get:
+      summary: Chiffrer un transfert
+      operationId: quoteCashout
+      tags: [Transfert]
+      description: |
+        Renvoie la commission, le total qui sera prélevé et l'état de votre
+        portefeuille, sans rien engager.
+
+        <Note>
+        Le devis est **indicatif**. Le contrôle de solde qui compte a lieu à la
+        création du transfert : entre les deux, un autre de vos transferts peut avoir
+        consommé le disponible.
+        </Note>
+
+        Accessible avec une clé de test.
+      parameters:
+        - name: amount
+          in: query
+          required: true
+          description: Montant à transférer, en unités entières.
+          schema:
+            type: integer
+            minimum: 1
+            example: 25000
+      responses:
+        "200":
+          description: Devis.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  amount:
+                    type: integer
+                    example: 25000
+                  fees:
+                    type: integer
+                    example: 250
+                  totalToDebit:
+                    type: integer
+                    description: Ce qui sera immobilisé puis prélevé (`amount + fees`).
+                    example: 25250
+                  currency:
+                    $ref: "#/components/schemas/Currency"
+                  wallet:
+                    type: object
+                    properties:
+                      available:
+                        type: integer
+                        example: 480000
+                      balance:
+                        type: integer
+                        example: 500000
+                      reserved:
+                        type: integer
+                        example: 20000
+                  sufficient:
+                    type: boolean
+                    description: "`true` si `available >= totalToDebit` à cet instant."
+                    example: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+
+  /cashout:
+    post:
+      summary: Transférer vers un compte mobile money
+      operationId: createCashout
+      tags: [Transfert]
+      description: |
+        Verse le montant au bénéficiaire et prélève votre portefeuille du montant plus
+        la commission.
+
+        ### Immobilisation
+
+        Dès l'acceptation, le montant **et** la commission sont *immobilisés* : ils
+        quittent votre solde disponible sans encore être débités.
+
+        - transfert **exécuté** → ils sont débités, `balance` diminue ;
+        - transfert **échoué** → l'immobilisation est levée, votre solde retrouve son
+          niveau.
+
+        C'est ce mécanisme qui vous empêche d'engager deux fois le même solde pendant
+        qu'un transfert est en cours.
+
+        L'issue définitive arrive par notification (`cashout.succeeded` /
+        `cashout.failed`). Un transfert sans issue au bout de 6 heures passe en
+        `EXPIRED` et l'immobilisation est levée.
+
+        <Warning>
+        Cet endpoint exige une clé de production (`gk_live_`). Une clé de test est
+        refusée.
+        </Warning>
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/RequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, country, operator, beneficiaryPhone, beneficiaryName]
+              properties:
+                amount:
+                  type: integer
+                  minimum: 1
+                  description: Montant à verser au bénéficiaire, en unités entières.
+                  example: 25000
+                country:
+                  $ref: "#/components/schemas/Country"
+                operator:
+                  $ref: "#/components/schemas/Operator"
+                beneficiaryPhone:
+                  type: string
+                  maxLength: 24
+                  description: Numéro mobile money du bénéficiaire.
+                  example: "0501020304"
+                beneficiaryName:
+                  type: string
+                  maxLength: 160
+                  description: >
+                    Nom du bénéficiaire. Exigé par les opérateurs et repris sur votre
+                    relevé.
+                  example: Koffi Yao
+                externalReference:
+                  type: string
+                  maxLength: 120
+                  description: >
+                    Votre identifiant d'opération. Unique sur votre compte : c'est
+                    votre garde-fou contre le double décaissement.
+                  example: PAIE-2026-03-0042
+                description:
+                  type: string
+                  maxLength: 200
+                  example: Salaire mars 2026
+                callbackUrl:
+                  type: string
+                  format: uri
+                  description: URL de notification propre à cette opération. HTTPS obligatoire.
+                metadata:
+                  type: object
+                  additionalProperties: true
+            examples:
+              salaire:
+                summary: Transfert Wave
+                value:
+                  amount: 25000
+                  country: CI
+                  operator: WAVE
+                  beneficiaryPhone: "0501020304"
+                  beneficiaryName: Koffi Yao
+                  externalReference: PAIE-2026-03-0042
+                  description: Salaire mars 2026
+      responses:
+        "201":
+          description: Transfert accepté et immobilisation posée.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperationEnvelope"
+              example:
+                operation:
+                  reference: GUI-CO-20261001-4F7K2M9Q
+                  type: CASHOUT
+                  status: PENDING
+                  amount: 25000
+                  fees: 250
+                  netAmount: 25250
+                  currency: XOF
+                  country: CI
+                  operator: WAVE
+                  counterparty:
+                    phoneNumber: "+2250501020304"
+                    name: Koffi Yao
+                  externalReference: PAIE-2026-03-0042
+                  description: Salaire mars 2026
+                  payerActionUrl: null
+                  requiresPayerAction: false
+                  failure: null
+                  metadata: null
+                  createdAt: "2026-10-01T11:01:50.000Z"
+                  updatedAt: "2026-10-01T11:01:52.000Z"
+                  completedAt: null
+                  expiresAt: "2026-10-01T17:01:50.000Z"
+        "200":
+          description: Rejeu idempotent — la réponse initiale est renvoyée.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperationEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "402":
+          $ref: "#/components/responses/PaymentRequired"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /operations:
+    get:
+      summary: Lister vos opérations
+      operationId: listOperations
+      tags: [Opérations]
+      description: Encaissements et transferts confondus, les plus récents d'abord.
+      parameters:
+        - name: type
+          in: query
+          schema:
+            $ref: "#/components/schemas/OperationType"
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/OperationStatus"
+        - name: country
+          in: query
+          schema:
+            $ref: "#/components/schemas/Country"
+        - name: operator
+          in: query
+          schema:
+            $ref: "#/components/schemas/Operator"
+        - name: externalReference
+          in: query
+          description: Votre propre référence d'opération.
+          schema:
+            type: string
+            maxLength: 120
+        - name: from
+          in: query
+          description: Borne basse de création, au format ISO 8601.
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          description: Borne haute de création, au format ISO 8601.
+          schema:
+            type: string
+            format: date-time
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Page d'opérations.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                    example: 184
+                  limit:
+                    type: integer
+                    example: 50
+                  offset:
+                    type: integer
+                    example: 0
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Operation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /operations/{reference}:
+    get:
+      summary: Consulter une opération
+      operationId: getOperation
+      tags: [Opérations]
+      description: |
+        **Source de vérité sur l'état d'une opération.** À interroger si une
+        notification ne vous est pas parvenue, plutôt que de l'attendre indéfiniment.
+      parameters:
+        - name: reference
+          in: path
+          required: true
+          description: Référence Djonanko de l'opération.
+          schema:
+            type: string
+            example: GUI-CI-20261001-7K2M9QX4
+      responses:
+        "200":
+          description: L'opération.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperationEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /operations/{reference}/events:
+    get:
+      summary: Historique d'état d'une opération
+      operationId: listOperationEvents
+      tags: [Opérations]
+      description: >
+        Chaque changement d'état, dans l'ordre chronologique. Utile pour comprendre le
+        parcours d'une opération lors d'un litige.
+      parameters:
+        - name: reference
+          in: path
+          required: true
+          schema:
+            type: string
+            example: GUI-CI-20261001-7K2M9QX4
+      responses:
+        "200":
+          description: Historique.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        fromStatus:
+                          oneOf:
+                            - $ref: "#/components/schemas/OperationStatus"
+                            - type: "null"
+                          description: "`null` pour l'événement de création."
+                        toStatus:
+                          $ref: "#/components/schemas/OperationStatus"
+                        reason:
+                          type: [string, "null"]
+                        occurredAt:
+                          type: string
+                          format: date-time
+              example:
+                items:
+                  - fromStatus: null
+                    toStatus: CREATED
+                    reason: Opération enregistrée
+                    occurredAt: "2026-10-01T10:12:04.000Z"
+                  - fromStatus: CREATED
+                    toStatus: AWAITING_PAYER
+                    reason: Réponse de soumission
+                    occurredAt: "2026-10-01T10:12:05.000Z"
+                  - fromStatus: AWAITING_PAYER
+                    toStatus: SUCCEEDED
+                    reason: Confirmation reçue
+                    occurredAt: "2026-10-01T10:13:47.000Z"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /merchants/signup:
+    post:
+      summary: Créer votre compte
+      operationId: signup
+      tags: [Compte]
+      security: []
+      description: |
+        Crée votre compte, son portefeuille et votre première paire de clés.
+
+        L'en-tête `x-admission-token` est obligatoire : il vous est transmis par votre
+        référent Djonanko après accord. Cet endpoint n'est pas ouvert au public.
+
+        <Warning>
+        `apiSecret` et `webhookSecret` ne sont affichés **qu'une seule fois**.
+        Enregistrez-les immédiatement dans votre gestionnaire de secrets — ils ne sont
+        pas récupérables. En cas de perte, il faut émettre une nouvelle clé et faire
+        tourner le secret de signature.
+        </Warning>
+
+        Le compte naît en statut `PENDING` : vous pouvez authentifier, consulter votre
+        solde, configurer vos notifications et déclarer vos adresses IP, mais **pas
+        encore opérer**. L'activation intervient après validation de votre dossier.
+      parameters:
+        - name: x-admission-token
+          in: header
+          required: true
+          description: Jeton d'admission fourni par Djonanko.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, country]
+              properties:
+                name:
+                  type: string
+                  minLength: 2
+                  maxLength: 160
+                  description: Nom commercial.
+                  example: Wakati Technologies
+                legalName:
+                  type: string
+                  maxLength: 200
+                  description: Raison sociale au registre du commerce.
+                  example: Wakati Technologies SARL
+                email:
+                  type: string
+                  format: email
+                  maxLength: 180
+                  description: >
+                    Adresse de contact technique. Unique : elle identifie votre compte.
+                  example: tech@wakati.ci
+                phoneNumber:
+                  type: string
+                  maxLength: 24
+                  example: "+2250700000000"
+                country:
+                  $ref: "#/components/schemas/Country"
+                webhookUrl:
+                  type: string
+                  format: uri
+                  description: >
+                    URL HTTPS de réception des notifications. Configurable ensuite via
+                    `PATCH /merchants/me`.
+                  example: https://wakati.ci/hooks/djonanko
+                metadata:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "201":
+          description: Compte créé.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  merchant:
+                    $ref: "#/components/schemas/Merchant"
+                  credentials:
+                    type: object
+                    properties:
+                      apiKey:
+                        type: string
+                        example: gk_live_4f7k2m9q1a2b3c4d5e6f7a8b
+                      apiSecret:
+                        type: string
+                        description: Affiché une seule fois.
+                        example: gs_live_…
+                      environment:
+                        type: string
+                        enum: [live, test]
+                  webhookSecret:
+                    type: string
+                    description: >
+                      Secret de signature de vos notifications. Affiché une seule fois.
+                    example: whsec_…
+                  notice:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          description: Jeton d'admission invalide (`ADMISSION_DENIED`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /merchants/me:
+    get:
+      summary: Consulter votre compte
+      operationId: getMe
+      tags: [Compte]
+      description: >
+        Statut, pays ouverts, barème et plafonds applicables à votre compte.
+      responses:
+        "200":
+          description: Votre compte.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  merchant:
+                    $ref: "#/components/schemas/Merchant"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    patch:
+      summary: Modifier votre compte
+      operationId: updateMe
+      tags: [Compte]
+      description: >
+        Seuls ces champs sont modifiables. Le barème, les plafonds, les pays ouverts et
+        le statut sont contractuels : leur évolution passe par votre référent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  maxLength: 160
+                phoneNumber:
+                  type: string
+                  maxLength: 24
+                webhookUrl:
+                  type: string
+                  format: uri
+                  description: URL HTTPS de réception des notifications.
+                metadata:
+                  type: object
+                  additionalProperties: true
+            example:
+              webhookUrl: https://wakati.ci/hooks/djonanko-v2
+      responses:
+        "200":
+          description: Compte mis à jour.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  merchant:
+                    $ref: "#/components/schemas/Merchant"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /merchants/me/credentials:
+    get:
+      summary: Lister vos clés d'API
+      operationId: listCredentials
+      tags: [Compte]
+      description: Les secrets ne sont jamais renvoyés.
+      responses:
+        "200":
+          description: Vos clés.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        apiKey:
+                          type: string
+                          example: gk_live_4f7k2m9q1a2b3c4d5e6f7a8b
+                        environment:
+                          type: string
+                          enum: [live, test]
+                        label:
+                          type: [string, "null"]
+                        inUse:
+                          type: boolean
+                          description: >
+                            `true` pour la clé présentée sur cet appel. Permet de ne
+                            pas révoquer celle qui fait tourner votre production.
+                        lastUsedAt:
+                          type: [string, "null"]
+                          format: date-time
+                        revokedAt:
+                          type: [string, "null"]
+                          format: date-time
+                        expiresAt:
+                          type: [string, "null"]
+                          format: date-time
+                        createdAt:
+                          type: string
+                          format: date-time
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      summary: Émettre une nouvelle paire de clés
+      operationId: createCredential
+      tags: [Compte]
+      description: |
+        Pour une rotation sans coupure : émettez la nouvelle paire, déployez-la, puis
+        révoquez l'ancienne. Plusieurs paires peuvent être actives simultanément.
+
+        <Warning>
+        Le secret n'est affiché qu'une seule fois.
+        </Warning>
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label:
+                  type: string
+                  maxLength: 80
+                  description: Libellé pour distinguer cette paire des autres.
+                  example: backend production 2026-10
+                environment:
+                  type: string
+                  enum: [live, test]
+                  default: live
+                  description: >
+                    Une clé `test` authentifie et permet la consultation, mais est
+                    refusée sur les endpoints qui déplacent de l'argent réel.
+      responses:
+        "201":
+          description: Paire émise.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  credential:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      apiKey:
+                        type: string
+                      apiSecret:
+                        type: string
+                        description: Affiché une seule fois.
+                      environment:
+                        type: string
+                      label:
+                        type: [string, "null"]
+                      createdAt:
+                        type: string
+                        format: date-time
+                  notice:
+                    type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /merchants/me/credentials/{id}:
+    delete:
+      summary: Révoquer une clé
+      operationId: revokeCredential
+      tags: [Compte]
+      description: >
+        La dernière clé active ne peut pas être révoquée : vous perdriez tout accès au
+        compte. Émettez d'abord la remplaçante.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Clé révoquée.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  credential:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      apiKey:
+                        type: string
+                      revokedAt:
+                        type: string
+                        format: date-time
+        "400":
+          description: Dernière clé active — révocation refusée.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /merchants/me/wallet:
+    get:
+      summary: Consulter votre portefeuille
+      operationId: getWallet
+      tags: [Portefeuille]
+      description: |
+        Portefeuille unique : les encaissements le créditent, les transferts le
+        débitent.
+
+        `available = balance − reserved`, où `reserved` est la part immobilisée par vos
+        transferts en cours. **C'est `available` qui détermine ce que vous pouvez
+        engager**, pas `balance`.
+      responses:
+        "200":
+          description: Votre portefeuille.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  wallet:
+                    $ref: "#/components/schemas/Wallet"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /merchants/me/wallet/statement:
+    get:
+      summary: Relevé de portefeuille
+      operationId: getStatement
+      tags: [Portefeuille]
+      description: >
+        Chaque mouvement, du plus récent au plus ancien. Chaque ligne porte le solde
+        après écriture (`balanceAfter`), ce qui permet un rapprochement ligne à ligne
+        avec votre comptabilité.
+      parameters:
+        - name: direction
+          in: query
+          schema:
+            type: string
+            enum: [CREDIT, DEBIT, HOLD, RELEASE]
+        - name: kind
+          in: query
+          schema:
+            type: string
+            enum:
+              [
+                CASHIN_CREDIT,
+                CASHIN_FEE,
+                CASHOUT_HOLD,
+                CASHOUT_DEBIT,
+                CASHOUT_FEE,
+                CASHOUT_RELEASE,
+                REVERSAL_CREDIT,
+                REVERSAL_DEBIT,
+                ADJUSTMENT_CREDIT,
+                ADJUSTMENT_DEBIT,
+              ]
+        - name: operationReference
+          in: query
+          description: Pour isoler les mouvements d'une opération donnée.
+          schema:
+            type: string
+            maxLength: 48
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Page de relevé.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/LedgerEntry"
+              example:
+                total: 1842
+                limit: 50
+                offset: 0
+                items:
+                  - id: 3b8e1f2a-9c4d-4e6f-8a1b-2c3d4e5f6a7b
+                    sequence: 1842
+                    direction: DEBIT
+                    kind: CASHOUT_FEE
+                    amount: 250
+                    currency: XOF
+                    balanceAfter: 474750
+                    reservedAfter: 0
+                    operationReference: GUI-CO-20261001-4F7K2M9Q
+                    description: Commission sur transfert GUI-CO-20261001-4F7K2M9Q
+                    createdAt: "2026-10-01T11:04:02.000Z"
+                  - id: 2a7d0e1b-8b3c-4d5e-9f0a-1b2c3d4e5f6a
+                    sequence: 1841
+                    direction: DEBIT
+                    kind: CASHOUT_DEBIT
+                    amount: 25000
+                    currency: XOF
+                    balanceAfter: 475000
+                    reservedAfter: 0
+                    operationReference: GUI-CO-20261001-4F7K2M9Q
+                    description: Transfert GUI-CO-20261001-4F7K2M9Q
+                    createdAt: "2026-10-01T11:04:02.000Z"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /merchants/me/allowed-ips:
+    get:
+      summary: Lister vos adresses IP autorisées
+      operationId: listAllowedIps
+      tags: [Sécurité]
+      responses:
+        "200":
+          description: Vos adresses déclarées.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mode:
+                    type: string
+                    enum: [off, observe, enforce]
+                    description: >
+                      Régime d'application courant. En `enforce`, un appel depuis une
+                      adresse non déclarée est refusé.
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        cidr:
+                          type: string
+                          example: 41.207.12.0/24
+                        label:
+                          type: [string, "null"]
+                        createdAt:
+                          type: string
+                          format: date-time
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      summary: Déclarer une adresse IP autorisée
+      operationId: createAllowedIp
+      tags: [Sécurité]
+      description: >
+        Déclarez les adresses depuis lesquelles vos serveurs appellent. C'est un second
+        facteur de fait : une clé volée ne sert à rien si elle doit être présentée
+        depuis votre infrastructure.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cidr]
+              properties:
+                cidr:
+                  type: string
+                  description: >
+                    Adresse IPv4 seule, ou plage en notation CIDR. IPv4 uniquement.
+                  example: 41.207.12.34
+                label:
+                  type: string
+                  maxLength: 120
+                  example: passerelle sortante Abidjan
+      responses:
+        "201":
+          description: Adresse déclarée.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  allowedIp:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      cidr:
+                        type: string
+                      label:
+                        type: [string, "null"]
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /merchants/me/allowed-ips/{id}:
+    delete:
+      summary: Retirer une adresse IP autorisée
+      operationId: deleteAllowedIp
+      tags: [Sécurité]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Adresse retirée.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /merchants/me/ip-check:
+    get:
+      summary: Vérifier l'adresse IP vue par Djonanko
+      operationId: ipCheck
+      tags: [Sécurité]
+      description: >
+        Indique depuis quelle adresse nous vous voyons appeler et si elle est
+        autorisée. Utile derrière un NAT ou un proxy sortant, quand vous ne savez pas
+        quelle adresse déclarer. **Cet endpoint n'est jamais soumis au filtrage par
+        IP** : il reste accessible même après un refus.
+      responses:
+        "200":
+          description: Diagnostic.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  clientIp:
+                    type: string
+                    example: 41.207.12.34
+                  mode:
+                    type: string
+                    enum: [off, observe, enforce]
+                  allowed:
+                    type: boolean
+                  declaredCount:
+                    type: integer
+                  declared:
+                    type: array
+                    items:
+                      type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /merchants/me/webhook-secret/rotate:
+    post:
+      summary: Renouveler votre secret de signature
+      operationId: rotateWebhookSecret
+      tags: [Notifications]
+      description: |
+        <Warning>
+        **Coupure immédiate.** Les notifications sont signées avec le nouveau secret dès
+        cet appel ; l'ancien n'est plus valable. Déployez le nouveau sans délai, sinon
+        vos vérifications de signature échoueront.
+        </Warning>
+      responses:
+        "201":
+          description: Nouveau secret.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  webhookSecret:
+                    type: string
+                    description: Affiché une seule fois.
+                    example: whsec_…
+                  notice:
+                    type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /merchants/me/webhooks:
+    get:
+      summary: Lister vos notifications en échec
+      operationId: listWebhookDeliveries
+      tags: [Notifications]
+      description: >
+        Par défaut, les notifications en attente de rejeu et celles abandonnées. La
+        charge complète est incluse : vous pouvez la traiter sans attendre un rejeu.
+      parameters:
+        - name: status
+          in: query
+          description: >
+            `FAILED` (rejeu programmé), `ABANDONED` (définitif), `SUCCESS` ou
+            `PENDING`. À défaut, `FAILED` et `ABANDONED`.
+          schema:
+            type: string
+            enum: [PENDING, SUCCESS, FAILED, ABANDONED]
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Page de notifications.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        eventId:
+                          type: string
+                          example: evt_9f1c2b7e4a5d4c8fb0a1e2d3c4b5a697
+                        eventType:
+                          type: string
+                          example: cashin.succeeded
+                        operationReference:
+                          type: [string, "null"]
+                        status:
+                          type: string
+                          enum: [PENDING, SUCCESS, FAILED, ABANDONED]
+                        attempts:
+                          type: integer
+                        maxAttempts:
+                          type: integer
+                        lastHttpStatus:
+                          type: [integer, "null"]
+                          description: Code renvoyé par votre serveur à la dernière tentative.
+                        lastError:
+                          type: [string, "null"]
+                        nextRetryAt:
+                          type: [string, "null"]
+                          format: date-time
+                        deliveredAt:
+                          type: [string, "null"]
+                          format: date-time
+                        createdAt:
+                          type: string
+                          format: date-time
+                        payload:
+                          type: object
+                          additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /merchants/me/webhooks/{id}/replay:
+    post:
+      summary: Rejouer une notification
+      operationId: replayWebhookDelivery
+      tags: [Notifications]
+      description: >
+        Renvoie la notification à l'identique, avec une signature réhorodatée. Une
+        notification déjà livrée ne peut pas être rejouée.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "201":
+          description: Tentative effectuée.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  delivered:
+                    type: boolean
+                    description: "`true` si votre serveur a répondu 2xx."
+                  delivery:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      status:
+                        type: string
+                      attempts:
+                        type: integer
+                      lastHttpStatus:
+                        type: [integer, "null"]
+                      lastError:
+                        type: [string, "null"]
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Notification déjà livrée (`WEBHOOK_ALREADY_DELIVERED`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /merchants/me/webhooks/test:
+    post:
+      summary: Envoyer une notification de test
+      operationId: testWebhook
+      tags: [Notifications]
+      description: >
+        Envoie un événement `ping` signé à votre URL. À utiliser pour valider votre
+        endpoint et votre vérification de signature **avant** votre première opération
+        réelle.
+      responses:
+        "201":
+          description: Tentative effectuée.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  delivered:
+                    type: boolean
+                  url:
+                    type: [string, "null"]
+                  hint:
+                    type: string
+                    description: Piste de diagnostic si la livraison a échoué.
+        "401":
+          $ref: "#/components/responses/Unauthorized"

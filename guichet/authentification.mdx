@@ -1,0 +1,139 @@
+---
+title: "Authentification"
+description: "Clés d'API, rotation sans coupure, environnements et filtrage par IP."
+icon: "key"
+---
+
+Chaque appel au Guichet porte **deux en-têtes** :
+
+| En-tête | Valeur |
+|---|---|
+| `x-api-key` | Votre clé publique, préfixée `gk_live_` ou `gk_test_` |
+| `x-api-secret` | Votre secret, préfixé `gs_live_` ou `gs_test_` |
+
+```bash
+curl https://guichet.apidjonanko.tech/v1/merchants/me \
+  -H "x-api-key: gk_live_4f7k2m9q1a2b3c4d5e6f7a8b" \
+  -H "x-api-secret: gs_live_<votre_secret>"
+```
+
+<Warning>
+**Le secret ne doit jamais quitter vos serveurs.** Ne l'embarquez pas dans une application mobile, une page web ou un dépôt Git, et ne le journalisez pas.
+
+Il n'est affiché **qu'une seule fois**, à l'émission de la clé : Djonanko ne peut pas vous le renvoyer. En cas de perte ou de suspicion de fuite, [émettez une nouvelle paire](#rotation-sans-coupure) et révoquez l'ancienne.
+</Warning>
+
+<Note>
+Le Guichet est une API **serveur à serveur**. Il n'accepte aucune requête de navigateur : les réponses ne portent pas d'en-tête CORS, et c'est volontaire — vos clés n'ont rien à faire dans un navigateur.
+</Note>
+
+## Environnements `live` et `test`
+
+Il n'y a pas d'URL de simulation séparée : vous appelez la même API. La distinction se fait par la clé.
+
+| | `gk_live_` | `gk_test_` |
+|---|---|---|
+| Authentification | ✅ | ✅ |
+| Consultation (compte, portefeuille, opérations, relevé) | ✅ | ✅ |
+| `GET /cashout/quote` | ✅ | ✅ |
+| `POST /cashin` | ✅ | ❌ `INVALID_CREDENTIALS` |
+| `POST /cashout` | ✅ | ❌ `INVALID_CREDENTIALS` |
+
+Une clé de test est utile pour câbler votre intégration, vos lectures et vos tableaux de bord sans risque de déclencher un mouvement d'argent par erreur.
+
+```bash
+curl -X POST https://guichet.apidjonanko.tech/v1/merchants/me/credentials \
+  -H "x-api-key: gk_live_…" -H "x-api-secret: gs_live_…" \
+  -H "Content-Type: application/json" \
+  -d '{ "label": "recette", "environment": "test" }'
+```
+
+## Rotation sans coupure
+
+Plusieurs paires peuvent être actives en même temps. La rotation se fait donc **sans interruption de service**, dans cet ordre :
+
+<Steps>
+  <Step title="Émettez la nouvelle paire">
+    ```bash
+    curl -X POST https://guichet.apidjonanko.tech/v1/merchants/me/credentials \
+      -H "x-api-key: gk_live_…" -H "x-api-secret: gs_live_…" \
+      -H "Content-Type: application/json" \
+      -d '{ "label": "backend production 2026-10" }'
+    ```
+  </Step>
+  <Step title="Déployez-la">
+    Mettez à jour votre configuration et assurez-vous que toutes vos instances l'utilisent.
+  </Step>
+  <Step title="Vérifiez laquelle est réellement employée">
+    ```bash
+    curl https://guichet.apidjonanko.tech/v1/merchants/me/credentials \
+      -H "x-api-key: gk_live_…" -H "x-api-secret: gs_live_…"
+    ```
+
+    Le champ `inUse` marque la clé présentée sur cet appel, et `lastUsedAt` indique la dernière utilisation de chacune. Si l'ancienne clé a encore servi récemment, une instance n'a pas été mise à jour.
+  </Step>
+  <Step title="Révoquez l'ancienne">
+    ```bash
+    curl -X DELETE https://guichet.apidjonanko.tech/v1/merchants/me/credentials/<id> \
+      -H "x-api-key: gk_live_…" -H "x-api-secret: gs_live_…"
+    ```
+  </Step>
+</Steps>
+
+<Note>
+La **dernière clé active ne peut pas être révoquée** : vous perdriez tout accès au compte, sans moyen d'en émettre une nouvelle. Créez toujours la remplaçante d'abord.
+</Note>
+
+## Filtrage par adresse IP
+
+Déclarez les adresses depuis lesquelles vos serveurs appellent. C'est un second facteur de fait : une clé volée ne sert à rien si elle doit être présentée depuis votre infrastructure.
+
+```bash
+curl -X POST https://guichet.apidjonanko.tech/v1/merchants/me/allowed-ips \
+  -H "x-api-key: gk_live_…" -H "x-api-secret: gs_live_…" \
+  -H "Content-Type: application/json" \
+  -d '{ "cidr": "41.207.12.0/24", "label": "sortie Abidjan" }'
+```
+
+Adresse IPv4 seule (traitée comme un `/32`) ou plage CIDR. IPv4 uniquement.
+
+### Quelle adresse déclarer ?
+
+Derrière un NAT, un proxy sortant ou un hébergeur mutualisé, l'adresse que vous croyez utiliser n'est pas toujours celle que nous voyons. Demandez-nous :
+
+```bash
+curl https://guichet.apidjonanko.tech/v1/merchants/me/ip-check \
+  -H "x-api-key: gk_live_…" -H "x-api-secret: gs_live_…"
+```
+
+```json
+{
+  "clientIp": "41.207.12.34",
+  "mode": "enforce",
+  "allowed": true,
+  "declaredCount": 2,
+  "declared": ["41.207.12.0/24", "196.49.10.8"]
+}
+```
+
+<Tip>
+Cet endpoint n'est **jamais** soumis au filtrage par IP : il reste accessible même après un refus `IP_NOT_ALLOWED`. C'est précisément le moment où vous en avez besoin.
+</Tip>
+
+Le champ `mode` indique le régime en vigueur :
+
+| `mode` | Comportement |
+|---|---|
+| `off` | Aucun filtrage |
+| `observe` | Les appels depuis une adresse non déclarée passent, mais sont tracés |
+| `enforce` | Les appels depuis une adresse non déclarée sont refusés en `403 IP_NOT_ALLOWED` |
+
+<Warning>
+En régime `enforce`, un compte **sans aucune adresse déclarée est refusé**. Si vous changez d'hébergeur ou ajoutez une région, déclarez les nouvelles adresses *avant* de basculer le trafic.
+</Warning>
+
+## Ce qui n'empêche pas d'authentifier
+
+Un compte `PENDING` ou `SUSPENDED` s'authentifie normalement : vous pouvez consulter votre portefeuille, vos opérations et configurer vos notifications. C'est la **création d'opération** qui est refusée, avec `403 ACCOUNT_SUSPENDED`.
+
+Cette distinction est utile : elle vous permet de préparer et de valider toute votre intégration avant l'activation du compte.

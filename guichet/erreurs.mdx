@@ -1,0 +1,148 @@
+---
+title: "Erreurs"
+description: "Forme des erreurs, catalogue complet des codes et conduite à tenir."
+icon: "triangle-exclamation"
+---
+
+Toutes les erreurs du Guichet ont la même forme :
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "INSUFFICIENT_BALANCE",
+    "message": "Le solde disponible de votre portefeuille est insuffisant.",
+    "details": { "available": 12000, "required": 25250, "currency": "XOF" }
+  },
+  "requestId": "9f1c2b7e-4a5d-4c8f-b0a1-e2d3c4b5a697",
+  "timestamp": "2026-10-01T10:12:04.000Z"
+}
+```
+
+<Warning>
+**Branchez votre logique sur `error.code`, jamais sur `error.message`.** Les codes sont stables et font partie du contrat ; les messages peuvent être reformulés ou traduits à tout moment.
+</Warning>
+
+`requestId` est également renvoyé dans l'en-tête `x-request-id` de chaque réponse, succès compris. Journalisez-le de votre côté et citez-le dans vos demandes de support : il relie l'appel, son traitement et la notification associée.
+
+<Tip>
+Vous pouvez fournir votre propre `x-request-id` en requête. Il est repris tel quel dans la réponse et dans nos journaux — pratique pour corréler avec votre propre identifiant de trace.
+</Tip>
+
+## Erreurs d'appel
+
+<AccordionGroup>
+  <Accordion title="401 — Authentification">
+    | Code | Cause | Conduite à tenir |
+    |---|---|---|
+    | `MISSING_CREDENTIALS` | `x-api-key` ou `x-api-secret` absent | Ajoutez les deux en-têtes |
+    | `INVALID_CREDENTIALS` | Clé inconnue, secret erroné, clé révoquée ou expirée — **ou** clé de test sur un endpoint de production | Vérifiez vos identifiants et l'environnement de la clé |
+
+    <Note>
+    Les quatre causes renvoient le même code, volontairement : les distinguer permettrait de tester des clés jusqu'à trouver celles qui existent.
+    </Note>
+  </Accordion>
+
+  <Accordion title="403 — Autorisation">
+    | Code | Cause | Conduite à tenir |
+    |---|---|---|
+    | `ACCOUNT_SUSPENDED` | Compte `PENDING` (pas encore activé) ou `SUSPENDED` | Le champ `details.status` précise lequel. Contactez votre référent |
+    | `IP_NOT_ALLOWED` | Appel depuis une adresse non déclarée | [Déclarez-la](/guichet/authentification#filtrage-par-adresse-ip), ou vérifiez-la avec `/merchants/me/ip-check` |
+    | `WALLET_FROZEN` | Portefeuille gelé | Contactez votre référent |
+    | `ADMISSION_DENIED` | Jeton d'admission invalide au signup | Vérifiez `x-admission-token` |
+  </Accordion>
+
+  <Accordion title="400 — Requête invalide">
+    | Code | Cause | Conduite à tenir |
+    |---|---|---|
+    | `VALIDATION_ERROR` | Champ manquant, mal typé, ou **champ inconnu** | `details.fields` liste les problèmes |
+    | `IDEMPOTENCY_KEY_REQUIRED` | En-tête `Idempotency-Key` absent | Ajoutez-le |
+
+    <Warning>
+    Un champ **non reconnu** dans le corps provoque un `VALIDATION_ERROR`, il n'est pas ignoré. C'est volontaire : une faute de frappe sur `amount` doit échouer bruyamment plutôt que de passer un montant par défaut.
+    </Warning>
+  </Accordion>
+
+  <Accordion title="402 — Solde">
+    | Code | Cause | Conduite à tenir |
+    |---|---|---|
+    | `INSUFFICIENT_BALANCE` | `available` inférieur au total à prélever | Approvisionnez votre portefeuille. `details` donne `available` et `required` |
+
+    Rappel : c'est `available` (`balance − reserved`) qui compte, pas `balance`. Voir [Portefeuille](/guichet/portefeuille).
+  </Accordion>
+
+  <Accordion title="409 — Conflit">
+    | Code | Cause | Conduite à tenir |
+    |---|---|---|
+    | `IDEMPOTENCY_KEY_REUSED` | Même clé, corps différent | Bug de votre côté : votre clé n'est pas unique par intention |
+    | `IDEMPOTENT_REQUEST_IN_FLIGHT` | Requête identique en cours de traitement | Réessayez dans quelques secondes, **même clé** |
+    | `DUPLICATE_EXTERNAL_REFERENCE` | `externalReference` déjà utilisée | `details` donne l'opération existante et son statut |
+    | `WEBHOOK_ALREADY_DELIVERED` | Rejeu d'une notification déjà livrée | Aucune action |
+  </Accordion>
+
+  <Accordion title="422 — Requête valide mais inacceptable">
+    | Code | Cause | Conduite à tenir |
+    |---|---|---|
+    | `AMOUNT_BELOW_MINIMUM` | Montant sous le minimum | `details` donne la borne |
+    | `AMOUNT_ABOVE_MAXIMUM` | Montant au-dessus du plafond, **ou** plafond glissant 24 h dépassé | `details` distingue les deux cas |
+    | `UNSUPPORTED_OPERATOR` | Opérateur indisponible dans ce pays | Voir [Pays et opérateurs](/guichet/pays-et-operateurs) |
+    | `UNSUPPORTED_COUNTRY` | Pays non ouvert sur votre compte | `details.allowedCountries` liste les vôtres |
+    | `INVALID_PHONE_NUMBER` | Numéro invalide pour ce pays | `details.expectedLengths` donne les longueurs attendues |
+  </Accordion>
+
+  <Accordion title="429 — Débit">
+    | Code | Conduite à tenir |
+    |---|---|
+    | `RATE_LIMITED` | Ralentissez, puis réessayez avec la **même** clé d'idempotence |
+  </Accordion>
+
+  <Accordion title="503 / 504 — Indisponibilité">
+    | Code | Cause | Conduite à tenir |
+    |---|---|---|
+    | `UPSTREAM_UNAVAILABLE` | Indisponibilité temporaire | **Réessayez avec la même clé d'idempotence** |
+    | `OPERATOR_TIMEOUT` | Délai dépassé | Idem |
+    | `SETTLEMENT_ACCOUNT_UNAVAILABLE` | Indisponibilité temporaire côté Djonanko | Idem, puis contactez-nous si cela persiste |
+    | `INTERNAL_ERROR` | Erreur interne | Idem, en citant le `requestId` |
+
+    <Warning>
+    Sur ces codes, **l'issue est inconnue** : l'opération a peut-être été enregistrée avant la coupure. Réessayez impérativement avec la **même** `Idempotency-Key` — une nouvelle clé en créerait une seconde.
+    </Warning>
+  </Accordion>
+</AccordionGroup>
+
+## Erreurs d'opération
+
+Celles-ci n'apparaissent pas en réponse HTTP mais dans `operation.failure.code`, et dans les notifications `cashin.failed` / `cashout.failed`. L'opération a été acceptée, c'est son exécution qui a échoué.
+
+| Code | Signification | Ce que vous pouvez dire à votre client |
+|---|---|---|
+| `OPERATOR_INSUFFICIENT_FUNDS` | Solde mobile money insuffisant | « Rechargez votre compte, puis réessayez » |
+| `OPERATOR_ACCOUNT_UNKNOWN` | Compte inconnu ou inactif | « Vérifiez le numéro » |
+| `OPERATOR_ACCOUNT_LIMIT_REACHED` | Plafond du compte atteint | « Votre plafond mobile money est atteint ; voyez avec votre opérateur » |
+| `PAYER_CANCELLED` | Le payeur a refusé la demande | « Opération annulée, vous pouvez réessayer » |
+| `OPERATOR_TIMEOUT` | L'opérateur n'a pas répondu à temps | « Réessayez dans un instant » |
+| `OPERATOR_REFUSED` | Refus sans motif précis | « Opération refusée, réessayez » |
+| `UPSTREAM_UNAVAILABLE` | Indisponibilité temporaire | « Réessayez dans un instant » |
+| `SETTLEMENT_ACCOUNT_UNAVAILABLE` | Indisponibilité temporaire côté Djonanko | Nous contacter si cela persiste |
+| `INTERNAL_ERROR` | Erreur interne | Nous contacter avec la référence de l'opération |
+
+<Note>
+`OPERATOR_REFUSED` est volontairement vague : quand un opérateur ne fournit pas de motif exploitable, nous préférons rester général plutôt que de risquer un diagnostic faux. Conseiller à tort « rechargez votre compte » à un client dont le solde est suffisant est pire que de rester imprécis.
+</Note>
+
+## Faut-il réessayer ? Récapitulatif
+
+```
+┌─ 2xx ───────────────────── succès
+│
+├─ 400, 402, 403, 422 ────── refus concluant
+│                            → corrigez, ne réessayez pas tel quel
+│
+├─ 409 KEY_REUSED ────────── bug : clé non unique
+│                            → corrigez votre dérivation de clé
+│
+├─ 409 IN_FLIGHT, 429 ────── même clé, après une pause
+│
+└─ 503, 504 ──────────────── issue inconnue
+                             → même clé, impérativement
+```

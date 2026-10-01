@@ -1,0 +1,10 @@
+---
+title: "Relevé de portefeuille"
+openapi: "GET /merchants/me/wallet/statement"
+---
+
+<Tip>
+Triez sur **`sequence`**, pas sur `createdAt` : plusieurs écritures d'un même mouvement partagent l'horodatage à la milliseconde près.
+
+Chaque ligne porte `balanceAfter` : le rapprochement avec votre comptabilité se fait ligne à ligne. Filtrez par `operationReference` pour isoler les mouvements d'une opération.
+</Tip>

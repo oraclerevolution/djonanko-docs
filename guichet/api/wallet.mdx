@@ -1,0 +1,8 @@
+---
+title: "Consulter votre portefeuille"
+openapi: "GET /merchants/me/wallet"
+---
+
+<Warning>
+**C'est `available` (`balance − reserved`) qui détermine ce que vous pouvez engager**, pas `balance`. Un transfert dont le total dépasse `available` est refusé en `402`, même si `balance` paraît suffisant.
+</Warning>

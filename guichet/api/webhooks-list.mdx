@@ -1,0 +1,10 @@
+---
+title: "Lister vos notifications en échec"
+openapi: "GET /merchants/me/webhooks"
+---
+
+<Tip>
+La charge complète (`payload`) est incluse : vous pouvez la traiter directement, sans attendre un rejeu.
+
+Surveillez cet endpoint : une accumulation de `FAILED` ou `ABANDONED` signifie que vous perdez des confirmations d'encaissement.
+</Tip>
