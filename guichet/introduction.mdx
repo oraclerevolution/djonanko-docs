@@ -8,6 +8,10 @@ L'**API Guichet** permet à une entreprise d'**encaisser** (`cash-in`) et de **t
 
 Elle s'adresse aux entreprises qui intègrent le mobile money dans leur propre produit : places de marché, fintechs, opérateurs de paie, plateformes de collecte.
 
+<Tip>
+**Vous intégrez avec un agent de code ?** Djonanko expose un serveur MCP qui donne à Claude Code, Cursor ou Windsurf un accès direct à cette documentation et à la spécification de l'API. Votre agent lit alors les bonnes réponses au lieu de les supposer, et peut faire relire son code avant que vous ne l'exécutiez. Aucune clé à configurer — voir [Assistant IA (MCP)](/guichet/mcp).
+</Tip>
+
 <Note>
 L'API Guichet est **distincte de Djonanko Pay**. Djonanko Pay sert à encaisser via un lien de paiement ou un QR code, avec une page de paiement hébergée. Le Guichet n'a ni lien ni page : vous appelez l'API, votre client est sollicité sur son téléphone, vous recevez l'issue par notification.
 
@@ -95,5 +99,8 @@ sequenceDiagram
   </Card>
   <Card title="Référence API" icon="code" href="/guichet/api/cashin">
     Tous les endpoints, avec playground interactif.
+  </Card>
+  <Card title="Assistant IA (MCP)" icon="robot" href="/guichet/mcp">
+    Brancher votre agent de code sur cette documentation.
   </Card>
 </CardGroup>
