@@ -228,14 +228,14 @@ components:
         fees:
           type: integer
           description: Commission Djonanko, figée à la création de l'opération.
-          example: 75
+          example: 100
         netAmount:
           type: integer
           description: >
             Impact sur votre portefeuille. Sur un encaissement, ce qui vous est
             crédité (`amount − fees`). Sur un transfert, ce qui vous est prélevé
             (`amount + fees`).
-          example: 4925
+          example: 4900
         currency:
           $ref: "#/components/schemas/Currency"
         country:
@@ -389,13 +389,13 @@ components:
         amount:
           type: integer
           description: Toujours positif. Le sens est porté par `direction`.
-          example: 4925
+          example: 4900
         currency:
           $ref: "#/components/schemas/Currency"
         balanceAfter:
           type: integer
           description: Solde après cette écriture — permet un rapprochement ligne à ligne.
-          example: 504925
+          example: 504900
         reservedAfter:
           type: integer
           example: 20000
@@ -454,15 +454,16 @@ components:
           properties:
             cashinFeeBps:
               type: integer
-              description: Commission d'encaissement en points de base (150 = 1,5 %).
-              example: 150
+              description: Commission d'encaissement en points de base (200 = 2 %).
+              example: 200
             cashinFeeFlat:
               type: integer
               description: Part fixe de la commission d'encaissement.
               example: 0
             cashoutFeeBps:
               type: integer
-              example: 100
+              description: Commission de transfert en points de base (200 = 2 %).
+              example: 200
             cashoutFeeFlat:
               type: integer
               example: 0
@@ -589,7 +590,7 @@ components:
               message: Le solde disponible de votre portefeuille est insuffisant.
               details:
                 available: 12000
-                required: 25250
+                required: 25500
                 currency: XOF
             requestId: 9f1c2b7e-4a5d-4c8f-b0a1-e2d3c4b5a697
             timestamp: "2026-10-01T10:12:04.000Z"
@@ -749,8 +750,8 @@ webhooks:
                       type: CASHIN
                       status: SUCCEEDED
                       amount: 5000
-                      fees: 75
-                      netAmount: 4925
+                      fees: 100
+                      netAmount: 4900
                       currency: XOF
                       country: CI
                       operator: ORANGE
@@ -781,8 +782,8 @@ webhooks:
                       type: CASHOUT
                       status: FAILED
                       amount: 25000
-                      fees: 250
-                      netAmount: 25250
+                      fees: 500
+                      netAmount: 25500
                       currency: XOF
                       country: CI
                       operator: WAVE
@@ -928,8 +929,8 @@ paths:
                       type: CASHIN
                       status: AWAITING_PAYER
                       amount: 5000
-                      fees: 75
-                      netAmount: 4925
+                      fees: 100
+                      netAmount: 4900
                       currency: XOF
                       country: CI
                       operator: ORANGE
@@ -955,8 +956,8 @@ paths:
                       type: CASHIN
                       status: PENDING
                       amount: 1000
-                      fees: 15
-                      netAmount: 985
+                      fees: 20
+                      netAmount: 980
                       currency: XOF
                       country: CI
                       operator: MTN
@@ -1034,11 +1035,11 @@ paths:
                     example: 25000
                   fees:
                     type: integer
-                    example: 250
+                    example: 500
                   totalToDebit:
                     type: integer
                     description: Ce qui sera immobilisé puis prélevé (`amount + fees`).
-                    example: 25250
+                    example: 25500
                   currency:
                     $ref: "#/components/schemas/Currency"
                   wallet:
@@ -1165,8 +1166,8 @@ paths:
                   type: CASHOUT
                   status: PENDING
                   amount: 25000
-                  fees: 250
-                  netAmount: 25250
+                  fees: 500
+                  netAmount: 25500
                   currency: XOF
                   country: CI
                   operator: WAVE
@@ -1790,9 +1791,9 @@ paths:
                     sequence: 1842
                     direction: DEBIT
                     kind: CASHOUT_FEE
-                    amount: 250
+                    amount: 500
                     currency: XOF
-                    balanceAfter: 474750
+                    balanceAfter: 474500
                     reservedAfter: 0
                     operationReference: GUI-CO-20261001-4F7K2M9Q
                     description: Commission sur transfert GUI-CO-20261001-4F7K2M9Q

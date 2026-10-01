@@ -41,7 +41,7 @@ curl https://guichet.apidjonanko.tech/v1/merchants/me/wallet \
 
 ## L'immobilisation, étape par étape
 
-Prenons un portefeuille à 100 000 XOF et un transfert de 25 000 XOF avec 250 XOF de commission.
+Prenons un portefeuille à 100 000 XOF et un transfert de 25 000 XOF, soit 500 XOF de commission à 2 %.
 
 <Steps>
   <Step title="Avant la demande">
@@ -54,20 +54,20 @@ Prenons un portefeuille à 100 000 XOF et un transfert de 25 000 XOF avec 250 XO
   <Step title="Transfert accepté — le montant et la commission sont immobilisés">
     ```
     balance   100 000   ← inchangé : l'argent est encore là
-    reserved   25 250   ← mais il est engagé
-    available  74 750
+    reserved   25 500   ← mais il est engagé
+    available  74 500
     ```
 
     Deux écritures apparaissent au relevé : `CASHOUT_HOLD`.
   </Step>
   <Step title="Transfert exécuté — l'immobilisation devient un débit">
     ```
-    balance    74 750
+    balance    74 500
     reserved        0
-    available  74 750
+    available  74 500
     ```
 
-    Trois écritures : `CASHOUT_RELEASE`, `CASHOUT_DEBIT` (25 000), `CASHOUT_FEE` (250).
+    Trois écritures : `CASHOUT_RELEASE`, `CASHOUT_DEBIT` (25 000), `CASHOUT_FEE` (500).
   </Step>
   <Step title="…ou transfert échoué — l'immobilisation est levée">
     ```
@@ -87,7 +87,7 @@ C'est ce mécanisme qui vous empêche d'engager deux fois le même solde. Sans l
 Sur un **encaissement**, il n'y a pas d'immobilisation : le crédit arrive d'un coup, à la confirmation.
 
 ```
-balance   100 000  →  104 925   (CASHIN_CREDIT 5 000, CASHIN_FEE 75)
+balance   100 000  →  104 900   (CASHIN_CREDIT 5 000, CASHIN_FEE 100)
 ```
 
 ## Statut du portefeuille
@@ -119,8 +119,8 @@ Chaque ligne porte `balanceAfter`, le solde juste après l'écriture : vous pouv
       "sequence": 1842,
       "direction": "DEBIT",
       "kind": "CASHOUT_FEE",
-      "amount": 250,
-      "balanceAfter": 474750,
+      "amount": 500,
+      "balanceAfter": 474500,
       "reservedAfter": 0,
       "operationReference": "GUI-CO-20261001-4F7K2M9Q",
       "createdAt": "2026-10-01T11:04:02.000Z"
@@ -157,9 +157,78 @@ Pratique pour un litige : vous obtenez les trois ou quatre écritures d'un trans
 
 ## Commission
 
-La commission est **figée à la création de l'opération** et visible dans `operation.fees`. Une renégociation tarifaire ne modifie donc pas rétroactivement des opérations déjà passées.
+La commission Djonanko se calcule ainsi :
 
-Votre barème est consultable à tout moment :
+```
+commission = arrondi(montant × bps / 10 000) + flat
+```
+
+- **`bps`** : taux en points de base. `200` vaut 2 %, `150` vaut 1,5 %.
+- **`flat`** : part fixe, en unités entières de la devise. `0` par défaut.
+- L'arrondi est **au plus proche**, sur l'entier.
+
+### Barème par défaut
+
+Sans tarif négocié, le barème est de **2 % dans les deux sens** :
+
+| Sens | Taux | Part fixe |
+|---|---|---|
+| Encaissement (`cash-in`) | 2 % (`200` bps) | 0 |
+| Transfert (`cash-out`) | 2 % (`200` bps) | 0 |
+
+### Où elle s'applique
+
+La commission ne s'applique pas du même côté selon le sens de l'opération :
+
+<Tabs>
+  <Tab title="Encaissement">
+    La commission est **retenue sur le montant encaissé**. Votre client paie le montant plein, vous êtes crédité du net.
+
+    Pour un encaissement de **5 000 XOF** :
+
+    ```
+    commission  =  arrondi(5 000 × 200 / 10 000)  =  100
+    amount      =  5 000     ← ce que votre client paie
+    fees        =    100
+    netAmount   =  4 900     ← ce dont votre portefeuille est crédité
+    ```
+
+    Deux écritures au relevé : `CASHIN_CREDIT` (5 000) puis `CASHIN_FEE` (100).
+
+    <Tip>
+    Si vous voulez encaisser un montant net précis, calculez le montant brut à demander : pour recevoir 5 000 XOF nets à 2 %, demandez `arrondi(5 000 / 0,98)` = **5 102 XOF**.
+    </Tip>
+  </Tab>
+  <Tab title="Transfert">
+    La commission **s'ajoute au montant** : le bénéficiaire reçoit le montant plein, et votre portefeuille est prélevé du montant plus la commission.
+
+    Pour un transfert de **25 000 XOF** :
+
+    ```
+    commission    =  arrondi(25 000 × 200 / 10 000)  =  500
+    amount        =  25 000   ← ce que reçoit le bénéficiaire
+    fees          =    500
+    netAmount     =  25 500   ← ce qui est prélevé de votre portefeuille
+    totalToDebit  =  25 500   ← et donc ce qu'il faut avoir en `available`
+    ```
+
+    Trois écritures au relevé : `CASHOUT_RELEASE`, `CASHOUT_DEBIT` (25 000), `CASHOUT_FEE` (500).
+
+    <Warning>
+    Prévoyez `available ≥ montant + commission`, pas seulement `available ≥ montant`. Un transfert de 25 000 XOF avec 24 800 XOF disponibles est refusé en `402 INSUFFICIENT_BALANCE`.
+
+    [`GET /cashout/quote`](/guichet/api/cashout-quote) vous donne `totalToDebit` sans rien engager.
+    </Warning>
+  </Tab>
+</Tabs>
+
+### La commission est figée à la création
+
+<Note>
+`operation.fees` est calculé une fois, à la création de l'opération, et **stocké sur celle-ci**. Une renégociation tarifaire ne modifie donc jamais la commission d'opérations déjà passées : vos relevés déjà émis restent exacts, et un rapprochement comptable sur un exercice clos reste reproductible.
+</Note>
+
+### Consulter votre barème
 
 ```bash
 curl https://guichet.apidjonanko.tech/v1/merchants/me \
@@ -170,8 +239,8 @@ curl https://guichet.apidjonanko.tech/v1/merchants/me \
 {
   "merchant": {
     "pricing": {
-      "cashinFeeBps": 150, "cashinFeeFlat": 0,
-      "cashoutFeeBps": 100, "cashoutFeeFlat": 0
+      "cashinFeeBps": 200, "cashinFeeFlat": 0,
+      "cashoutFeeBps": 200, "cashoutFeeFlat": 0
     },
     "limits": {
       "minCashinAmount": 100, "maxCashinAmount": 2000000,
@@ -182,4 +251,17 @@ curl https://guichet.apidjonanko.tech/v1/merchants/me \
 }
 ```
 
-`Bps` = points de base : `150` vaut 1,5 %. La commission est `montant × bps / 10 000 + flat`, arrondie au plus proche. `dailyCashoutLimit` à `0` signifie qu'aucun plafond glissant sur 24 h n'est appliqué.
+<Tip>
+Lisez votre barème depuis cet endpoint plutôt que de le coder en dur. Si un taux négocié vous est appliqué, votre calcul reste juste sans redéploiement.
+</Tip>
+
+Le barème et les plafonds ne sont **pas modifiables par l'API** : ils sont contractuels. Leur évolution se demande à votre référent Djonanko. `dailyCashoutLimit` à `0` signifie qu'aucun plafond glissant sur 24 h n'est appliqué.
+
+### Suivre ce que vous avez payé
+
+Le cumul des commissions est dans `totalFees` sur [`GET /merchants/me/wallet`](/guichet/api/wallet). Pour le détail, filtrez le relevé :
+
+```bash
+curl "https://guichet.apidjonanko.tech/v1/merchants/me/wallet/statement?kind=CASHIN_FEE&limit=200" \
+  -H "x-api-key: gk_live_…" -H "x-api-secret: gs_live_…"
+```
